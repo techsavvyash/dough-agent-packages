@@ -1,0 +1,5 @@
+[install]
+# Match the dough-gateway house style: refuse to pull dependency versions
+# published less than a week ago (supply-chain hardening — a freshly
+# published malicious version has no soak time).
+minimumReleaseAge = 604800
