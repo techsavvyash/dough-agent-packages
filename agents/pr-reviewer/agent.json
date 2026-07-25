@@ -1,0 +1,25 @@
+{
+  "id": "pr-reviewer",
+  "version": "1.3.0",
+  "description": "Reviews a pull request and posts inline comments via GitHub.",
+  "runtime": "claude",
+  "model": null,
+  "needsWorkspace": true,
+  "workspaceMode": "pr-head",
+  "hooks": [
+    { "event": "before-agent", "kind": "setup-workspace" },
+    { "event": "after-agent", "kind": "post-pr-review" },
+    { "event": "on-operator-message", "kind": "steer-receive" },
+    { "event": "on-turn-completed", "kind": "steer-continuation" }
+  ],
+  "roles": ["reviewer"],
+  "keywords": ["github", "review", "pull-request", "claude"],
+  "author": { "name": "techsavvyash", "github": "techsavvyash" },
+  "license": "MIT",
+  "repository": {
+    "repo": "techsavvyash/dough-agent-packages",
+    "path": "agents/pr-reviewer"
+  },
+  "promptFile": "./prompt.md",
+  "readmeFile": "./README.md"
+}

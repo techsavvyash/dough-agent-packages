@@ -1,0 +1,26 @@
+{
+  "id": "coder",
+  "version": "1.1.0",
+  "description": "Implements a change in a target repo and opens a pull request.",
+  "runtime": "claude",
+  "model": null,
+  "needsWorkspace": true,
+  "workspaceMode": "branch",
+  "hooks": [
+    { "event": "before-agent", "kind": "setup-workspace" },
+    { "event": "before-agent", "kind": "provision-from-config" },
+    { "event": "after-agent", "kind": "open-pull-request" },
+    { "event": "on-operator-message", "kind": "steer-receive" },
+    { "event": "on-turn-completed", "kind": "steer-continuation" }
+  ],
+  "roles": ["coder"],
+  "keywords": ["github", "coding", "pull-request", "claude"],
+  "author": { "name": "techsavvyash", "github": "techsavvyash" },
+  "license": "MIT",
+  "repository": {
+    "repo": "techsavvyash/dough-agent-packages",
+    "path": "agents/coder"
+  },
+  "promptFile": "./prompt.md",
+  "readmeFile": "./README.md"
+}

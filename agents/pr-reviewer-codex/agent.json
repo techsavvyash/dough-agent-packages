@@ -1,0 +1,25 @@
+{
+  "id": "pr-reviewer-codex",
+  "version": "1.2.0",
+  "description": "Reviews a pull request via OpenAI Codex (ChatGPT login) and posts inline comments.",
+  "runtime": "codex",
+  "model": "gpt-5.5",
+  "needsWorkspace": true,
+  "workspaceMode": "pr-head",
+  "hooks": [
+    { "event": "before-agent", "kind": "setup-workspace" },
+    { "event": "after-agent", "kind": "post-pr-review" },
+    { "event": "on-operator-message", "kind": "steer-receive" },
+    { "event": "on-turn-completed", "kind": "steer-continuation" }
+  ],
+  "roles": ["reviewer"],
+  "keywords": ["github", "review", "pull-request", "codex", "openai"],
+  "author": { "name": "techsavvyash", "github": "techsavvyash" },
+  "license": "MIT",
+  "repository": {
+    "repo": "techsavvyash/dough-agent-packages",
+    "path": "agents/pr-reviewer-codex"
+  },
+  "promptFile": "./prompt.md",
+  "readmeFile": "./README.md"
+}
