@@ -1,0 +1,18 @@
+{
+  "id": "echo-node",
+  "version": "0.1.0",
+  "description": "A node-runtime fixture agent that echoes its input.",
+  "runtime": "node",
+  "needsWorkspace": false,
+  "entrypoint": "src/main.ts",
+  "toolchains": { "node": "20" },
+  "roles": ["chat"],
+  "keywords": ["fixture", "node"],
+  "author": { "name": "techsavvyash", "github": "techsavvyash" },
+  "license": "MIT",
+  "repository": {
+    "repo": "techsavvyash/dough-agent-packages",
+    "path": "test/fixtures/node-agent"
+  },
+  "readmeFile": "./README.md"
+}
