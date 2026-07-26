@@ -10,12 +10,7 @@
 
 import { AgentRuntime } from './manifest.ts';
 import { packDir } from './pack.ts';
-import {
-  ImmutabilityError,
-  RegistryClient,
-  RegistryError,
-  definitionDigest,
-} from './registry.ts';
+import { ImmutabilityError, RegistryClient, RegistryError } from './registry.ts';
 import { PackageIoError, loadPackage, resolveManifest } from './resolve.ts';
 import { ManifestValidationError } from './manifest.ts';
 
@@ -125,10 +120,21 @@ async function cmdPublish(dirs: string[], env: CliEnv): Promise<number> {
       continue;
     }
     try {
-      const outcome = await client.publish(def, (msg) => console.warn(`  warn: ${msg}`));
+      // Pass the package dir so a node-runtime publish can pack + upload its
+      // bundle before the manifest PUT (design §2 step 3); non-node runtimes
+      // ignore it. packDir is the default packer inside publish().
+      const outcome = await client.publish(
+        def,
+        (msg) => console.warn(`  warn: ${msg}`),
+        packDir,
+        dir,
+      );
       if (outcome.kind === 'published') {
         published++;
-        console.log(`PUBLISHED ${describe(def.id, def.version, def.runtime)}  digest=${definitionDigest(def)}`);
+        const bundleNote = outcome.bundleDigest ? `  bundle=${outcome.bundleDigest}` : '';
+        console.log(
+          `PUBLISHED ${describe(def.id, def.version, def.runtime)}  digest=${outcome.digest}${bundleNote}`,
+        );
       } else {
         skipped++;
         console.log(`SKIP      ${describe(def.id, def.version, def.runtime)}  (identical already published)`);

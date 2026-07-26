@@ -117,31 +117,35 @@ export type AgentHook = z.infer<typeof agentHookSchema>;
 
 // ── npm-style metadata (mirrors gateway PR #24) ─────────────────────────────
 
-const httpUrl = z
-  .string()
-  .url()
-  .refine((u) => u.startsWith('http://') || u.startsWith('https://'), {
-    message: 'must be an http(s) URL',
-  });
-
-export const agentAuthorSchema = z.object({
+// A person (author / maintainer) in npm's loose shape — a faithful mirror of
+// the gateway's `agentPersonSchema`. `name` required; `email`/`url`/`github`
+// are optional free-form handles (the gateway keeps them permissive: plain
+// `z.string().min(1)`, NOT `.email()`/`.url()`). We match that permissiveness
+// deliberately: a stricter local schema would reject a manifest the server
+// accepts, turning a valid publish into a spurious local pre-flight failure.
+export const agentPersonSchema = z.object({
   name: z.string().min(1),
-  github: z.string().min(1).optional(),
-  email: z.string().email().optional(),
-  url: httpUrl.optional(),
-});
-export type AgentAuthor = z.infer<typeof agentAuthorSchema>;
-
-export const agentMaintainerSchema = z.object({
-  name: z.string().min(1),
+  email: z.string().min(1).optional(),
+  url: z.string().min(1).optional(),
   github: z.string().min(1).optional(),
 });
-export type AgentMaintainer = z.infer<typeof agentMaintainerSchema>;
+export type AgentPerson = z.infer<typeof agentPersonSchema>;
 
+// `author` and `maintainers[]` share the person shape (gateway parity — the
+// gateway uses `agentPersonSchema` for both).
+export const agentAuthorSchema = agentPersonSchema;
+export type AgentAuthor = AgentPerson;
+export const agentMaintainerSchema = agentPersonSchema;
+export type AgentMaintainer = AgentPerson;
+
+// Source repository — mirrors the gateway's `agentRepositorySchema`: `repo`
+// (owner/name) plus optional `path` and `directory`. NOTE the gateway has no
+// `ref` field; a client-only `ref` would be stripped server-side (unknown key)
+// and must not be injected, so it is intentionally absent here.
 export const agentSourceSchema = z.object({
   repo: z.string().min(1) /* "owner/name" */,
   path: z.string().min(1).optional(),
-  ref: z.string().min(1).default('main'),
+  directory: z.string().min(1).optional(),
 });
 export type AgentSource = z.infer<typeof agentSourceSchema>;
 
@@ -198,9 +202,11 @@ export const agentManifestSchema = z
     author: agentAuthorSchema.optional(),
     maintainers: z.array(agentMaintainerSchema).optional(),
     license: z.string().min(1).optional(),
-    homepage: httpUrl.optional(),
+    // Gateway keeps homepage permissive (plain non-empty string, not `.url()`).
+    homepage: z.string().min(1).optional(),
     repository: agentSourceSchema.optional(),
-    deprecated: z.string().min(1).optional(),
+    // Gateway shape: `false`/absent = live; a string = the deprecation message.
+    deprecated: z.union([z.string().min(1), z.boolean()]).optional(),
 
     // authoring conveniences (resolved + stripped at publish)
     promptFile: z.string().min(1).optional(),
