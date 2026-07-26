@@ -1,0 +1,29 @@
+{
+  "id": "cp-solver",
+  "version": "1.0.0",
+  "description": "Solves competitive-programming problems from text or a screenshot — derives an algorithm within the stated limits and returns correct, efficient, ready-to-submit code.",
+  "runtime": "codex",
+  "model": "gpt-5.5",
+  "needsWorkspace": false,
+  "roles": ["chat"],
+  "modalities": ["text", "image"],
+  "keywords": [
+    "competitive-programming",
+    "algorithms",
+    "data-structures",
+    "codeforces",
+    "leetcode",
+    "icpc",
+    "codex",
+    "multimodal",
+    "telegram"
+  ],
+  "author": { "name": "techsavvyash", "github": "techsavvyash" },
+  "license": "MIT",
+  "repository": {
+    "repo": "techsavvyash/dough-agent-packages",
+    "path": "agents/cp-solver"
+  },
+  "promptFile": "./prompt.md",
+  "readmeFile": "./README.md"
+}

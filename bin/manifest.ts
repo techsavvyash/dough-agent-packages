@@ -63,6 +63,19 @@ export const agentRoleSchema = z.enum([
   AgentRole.Chat,
 ]);
 
+/** Declared input modalities an agent accepts (mirrors the gateway's
+ *  AgentModality). Absent = text-only; `image` marks a multimodal agent that
+ *  consumes task attachments (e.g. a screenshot of a problem statement). */
+export const AgentModality = {
+  Text: 'text',
+  Image: 'image',
+} as const;
+export type AgentModality = (typeof AgentModality)[keyof typeof AgentModality];
+export const agentModalitySchema = z.enum([
+  AgentModality.Text,
+  AgentModality.Image,
+]);
+
 // ── Hook validation (mirrors dough-gateway worker-protocol) ─────────────────
 
 export const hookEventSchema = z.enum([
@@ -196,6 +209,10 @@ export const agentManifestSchema = z
     hooks: z.array(agentHookSchema).default([]),
 
     roles: z.array(agentRoleSchema).min(1),
+
+    // Declared input modalities (text-only when absent). Mirrors the gateway
+    // schema; participates in the manifest digest (see PARSED_MANIFEST_KEYS).
+    modalities: z.array(agentModalitySchema).nonempty().optional(),
 
     // npm metadata
     keywords: z.array(z.string().min(1)).optional(),

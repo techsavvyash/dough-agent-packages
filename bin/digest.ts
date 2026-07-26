@@ -71,6 +71,7 @@ const PARSED_MANIFEST_KEYS = [
   'hooks',
   'description',
   'roles',
+  'modalities',
   'entrypoint',
   'clankerAgent',
   'toolchains',
