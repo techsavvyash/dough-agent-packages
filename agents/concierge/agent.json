@@ -6,7 +6,6 @@
   "model": "claude-sonnet-5",
   "needsWorkspace": false,
   "hooks": [],
-  "roles": ["chat"],
   "keywords": ["concierge", "orchestrator", "triage", "clanker", "claude"],
   "author": { "name": "techsavvyash", "github": "techsavvyash" },
   "license": "MIT",

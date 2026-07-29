@@ -2,15 +2,19 @@
 //
 // This mirrors the dough-gateway registry's `AgentDefinition` wire format
 // (post gateway PR #24 — npm metadata + content-addressed bundles) extended
-// per docs/design/agent-packages.md with the four-value runtime enum, the
-// `roles` classification, and the two authoring conveniences
-// (`promptFile` / `readmeFile`).
+// per docs/design/agent-packages.md with the four-value runtime enum and the
+// two authoring conveniences (`promptFile` / `readmeFile`).
+//
+// An agent package is PURE CAPABILITY (runtime, workspace, hooks, entrypoint,
+// toolchains, modalities, metadata). What a repo an agent to review/code/fix is
+// a per-repo BINDING on the gateway side — it is NOT a manifest field. There is
+// deliberately no `roles` classification here.
 //
 // The GATEWAY stays authoritative: `dough agent publish` calls
 // `POST /v1/agents/validate` for the server's real verdict. This local schema
 // is a fast pre-flight that catches the obvious mistakes (bad runtime shape,
-// missing role, a promptFile that resolves to an empty prompt) before a
-// network round-trip — and lets `validate` run offline in CI.
+// a promptFile that resolves to an empty prompt) before a network round-trip —
+// and lets `validate` run offline in CI.
 
 import { z } from 'zod';
 
@@ -45,22 +49,6 @@ export type AgentWorkspaceMode =
 export const agentWorkspaceModeSchema = z.enum([
   AgentWorkspaceMode.Branch,
   AgentWorkspaceMode.PrHead,
-]);
-
-/** Platform-facing classification — replaces the gateway's hardcoded
- *  REVIEWER_AGENT_REFS / FIXER_AGENT_REFS id lists (design §3, §5). */
-export const AgentRole = {
-  Reviewer: 'reviewer',
-  Coder: 'coder',
-  Fixer: 'fixer',
-  Chat: 'chat',
-} as const;
-export type AgentRole = (typeof AgentRole)[keyof typeof AgentRole];
-export const agentRoleSchema = z.enum([
-  AgentRole.Reviewer,
-  AgentRole.Coder,
-  AgentRole.Fixer,
-  AgentRole.Chat,
 ]);
 
 /** Declared input modalities an agent accepts (mirrors the gateway's
@@ -207,8 +195,6 @@ export const agentManifestSchema = z
     needsWorkspace: z.boolean(),
     workspaceMode: agentWorkspaceModeSchema.optional(),
     hooks: z.array(agentHookSchema).default([]),
-
-    roles: z.array(agentRoleSchema).min(1),
 
     // Declared input modalities (text-only when absent). Mirrors the gateway
     // schema; participates in the manifest digest (see PARSED_MANIFEST_KEYS).

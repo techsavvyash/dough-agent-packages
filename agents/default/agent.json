@@ -6,7 +6,6 @@
   "model": null,
   "needsWorkspace": false,
   "hooks": [],
-  "roles": ["chat"],
   "keywords": ["chat", "assistant", "general-purpose", "claude"],
   "author": { "name": "techsavvyash", "github": "techsavvyash" },
   "license": "MIT",

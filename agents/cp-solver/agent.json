@@ -5,7 +5,6 @@
   "runtime": "codex",
   "model": "gpt-5.5",
   "needsWorkspace": false,
-  "roles": ["chat"],
   "modalities": ["text", "image"],
   "keywords": [
     "competitive-programming",

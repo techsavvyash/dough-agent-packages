@@ -6,7 +6,6 @@
   "needsWorkspace": false,
   "entrypoint": "src/main.ts",
   "toolchains": { "node": "20" },
-  "roles": ["chat"],
   "keywords": ["fixture", "node"],
   "author": { "name": "techsavvyash", "github": "techsavvyash" },
   "license": "MIT",

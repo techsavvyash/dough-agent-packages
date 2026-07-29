@@ -1,5 +1,5 @@
 // Manifest schema accept/reject matrix — the per-runtime superRefine (design
-// §1 shape table), the roles enum, workspace/hook coherence, and semver.
+// §1 shape table), workspace/hook coherence, and semver.
 
 import { describe, expect, test } from 'bun:test';
 
@@ -17,7 +17,6 @@ function baseClaude(): Record<string, unknown> {
     description: 'd',
     runtime: 'claude',
     needsWorkspace: false,
-    roles: ['chat'],
     systemPrompt: 'hi',
   };
 }
@@ -75,7 +74,6 @@ describe('runtime shape matrix', () => {
       description: 'd',
       runtime: 'clanker',
       needsWorkspace: false,
-      roles: ['chat'],
       clankerAgent: { id: 'inner', instructions: 'do stuff', model: 'claude-sonnet-5' },
     };
     accepts(clanker);
@@ -92,7 +90,6 @@ describe('runtime shape matrix', () => {
       description: 'd',
       runtime: 'node',
       needsWorkspace: false,
-      roles: ['chat'],
       entrypoint: 'src/main.ts',
       toolchains: { node: '20' },
     };
@@ -113,7 +110,6 @@ describe('runtime shape matrix', () => {
       description: 'd',
       runtime: 'clanker',
       needsWorkspace: false,
-      roles: ['chat'],
     };
     rejects({ ...base, clankerAgent: { id: 'inner' } });
     rejects({ ...base, clankerAgent: { instructions: 'x' } });
@@ -121,22 +117,12 @@ describe('runtime shape matrix', () => {
   });
 });
 
-describe('roles enum', () => {
-  test('accepts each valid role', () => {
-    for (const role of ['reviewer', 'coder', 'fixer', 'chat']) {
-      accepts({ ...baseClaude(), roles: [role] });
-    }
-  });
-  test('rejects an unknown role', () => {
-    rejects({ ...baseClaude(), roles: ['deployer'] });
-  });
-  test('rejects an empty roles array', () => {
-    rejects({ ...baseClaude(), roles: [] });
-  });
-  test('rejects a missing roles field', () => {
-    const { roles, ...noRoles } = baseClaude();
-    void roles;
-    rejects(noRoles);
+describe('roles is not a manifest field (capability-only manifests)', () => {
+  test('rejects a stray roles key (strict schema, no dead field)', () => {
+    // The `roles` classification was removed from the manifest: reviewing/coding/
+    // fixing is a per-repo binding on the gateway, not a package field. A leftover
+    // `roles` key must be a hard error, not silently ignored.
+    rejects({ ...baseClaude(), roles: ['reviewer'] });
   });
 });
 
@@ -153,7 +139,6 @@ describe('workspace + hook coherence', () => {
         ...baseClaude(),
         needsWorkspace: true,
         workspaceMode: 'pr-head',
-        roles: ['reviewer'],
         hooks: [{ event: 'after-agent', kind: 'open-pull-request' }],
       },
       "workspaceMode is not 'branch'",
@@ -165,7 +150,6 @@ describe('workspace + hook coherence', () => {
         ...baseClaude(),
         needsWorkspace: true,
         workspaceMode: 'branch',
-        roles: ['reviewer'],
         hooks: [{ event: 'after-agent', kind: 'post-pr-review' }],
       },
       "workspaceMode is not 'pr-head'",
@@ -176,7 +160,6 @@ describe('workspace + hook coherence', () => {
       ...baseClaude(),
       needsWorkspace: true,
       workspaceMode: 'branch',
-      roles: ['coder'],
       // setup-workspace is a before-agent hook; binding to after-agent is invalid.
       hooks: [{ event: 'after-agent', kind: 'setup-workspace' }],
     });
@@ -189,7 +172,6 @@ describe('workspace + hook coherence', () => {
       runtime: 'claude',
       needsWorkspace: true,
       workspaceMode: 'pr-head',
-      roles: ['reviewer'],
       systemPrompt: 'review the diff',
       hooks: [
         { event: 'before-agent', kind: 'setup-workspace' },

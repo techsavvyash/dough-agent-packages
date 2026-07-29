@@ -12,7 +12,6 @@
     { "event": "on-operator-message", "kind": "steer-receive" },
     { "event": "on-turn-completed", "kind": "steer-continuation" }
   ],
-  "roles": ["reviewer"],
   "keywords": ["github", "review", "pull-request", "codex", "openai"],
   "author": { "name": "techsavvyash", "github": "techsavvyash" },
   "license": "MIT",

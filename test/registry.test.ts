@@ -22,7 +22,6 @@ function claudeDef(overrides: Partial<AgentManifest> = {}): AgentManifest {
     description: 'd',
     runtime: 'claude',
     needsWorkspace: false,
-    roles: ['chat'],
     systemPrompt: 'hello',
     hooks: [],
     ...overrides,
@@ -36,7 +35,6 @@ function nodeDef(overrides: Partial<AgentManifest> = {}): AgentManifest {
     description: 'echoes',
     runtime: 'node',
     needsWorkspace: false,
-    roles: ['chat'],
     entrypoint: 'src/main.ts',
     toolchains: { node: '20' },
     hooks: [],
@@ -103,7 +101,7 @@ describe('validate gate', () => {
       if (call.url.endsWith('/validate')) {
         return json(200, {
           valid: false,
-          errors: [{ path: 'roles', message: 'roles must be nonempty', code: 'schema' }],
+          errors: [{ path: 'description', message: 'description is required', code: 'schema' }],
           warnings: [],
         });
       }
@@ -112,7 +110,7 @@ describe('validate gate', () => {
     const client = new RegistryClient({ baseUrl: 'https://gw', token: 't', fetchImpl });
     await expect(client.publish(claudeDef())).rejects.toBeInstanceOf(RegistryError);
     expect(calls.map((c) => c.method)).toEqual(['POST']); // validate only
-    await expect(client.publish(claudeDef())).rejects.toThrow('roles must be nonempty');
+    await expect(client.publish(claudeDef())).rejects.toThrow('description is required');
   });
 
   test('warnings[] are printed and publish continues', async () => {
