@@ -9,7 +9,7 @@
   "hooks": [
     { "event": "before-agent", "kind": "setup-workspace" }
   ],
-  "roles": ["reviewer"],
+  "roles": ["chat"],
   "keywords": ["example", "node", "todo", "scanner", "scaffold"],
   "author": { "name": "techsavvyash", "github": "techsavvyash" },
   "license": "MIT",

@@ -45,9 +45,9 @@ apply):
 - `needsWorkspace: true` + `workspaceMode: "branch"` + the `setup-workspace`
   hook is what makes `DOUGH_WORKSPACE` a checkout of the repo. Drop all three
   for a pure-compute agent that only reads `DOUGH_TASK_INPUT`.
-- `roles: ["reviewer"]` is a **platform classification** — a reviewer-role agent
-  may be auto-dispatched on PR-review events. Use `["chat"]` if you want it
-  invoked only explicitly.
+- `roles: ["chat"]` is a **platform classification** — `chat` marks an
+  invoke-only agent. Switch to `["reviewer"]` (or `["fixer"]`) if you want it
+  auto-dispatched on PR-review events.
 - **Dependencies:** the packer strips `node_modules`, so a bundle ships source
   only. Keep the entrypoint on Node built-ins (as here), **or** declare a
   `toolchains` map and shell out to the provisioned runtime, e.g.:
