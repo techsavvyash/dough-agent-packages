@@ -1,6 +1,6 @@
 {
   "id": "fixer-codex",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Addresses review comments on an existing PR via OpenAI Codex (ChatGPT login).",
   "runtime": "codex",
   "model": "gpt-5.5",

@@ -1,6 +1,6 @@
 {
   "id": "pr-reviewer",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Reviews a pull request and posts inline comments via GitHub.",
   "runtime": "claude",
   "model": null,

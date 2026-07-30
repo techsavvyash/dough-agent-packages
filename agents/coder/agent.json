@@ -1,6 +1,6 @@
 {
   "id": "coder",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Implements a change in a target repo and opens a pull request.",
   "runtime": "claude",
   "model": null,

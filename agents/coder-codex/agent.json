@@ -1,6 +1,6 @@
 {
   "id": "coder-codex",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Implements a change in a target repo via OpenAI Codex (ChatGPT login) and opens a pull request.",
   "runtime": "codex",
   "model": "gpt-5.5",

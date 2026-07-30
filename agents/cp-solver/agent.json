@@ -1,6 +1,6 @@
 {
   "id": "cp-solver",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Solves competitive-programming problems from text or a screenshot — derives an algorithm within the stated limits and returns correct, efficient, ready-to-submit code.",
   "runtime": "codex",
   "model": "gpt-5.5",
