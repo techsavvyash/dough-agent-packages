@@ -70,7 +70,6 @@ const PARSED_MANIFEST_KEYS = [
   'workspaceMode',
   'hooks',
   'description',
-  'roles',
   'modalities',
   'entrypoint',
   'clankerAgent',

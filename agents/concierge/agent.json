@@ -1,12 +1,11 @@
 {
   "id": "concierge",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Always-on coordinator agent: triages requests, decomposes real work into pad task DAGs, replies.",
   "runtime": "claude",
   "model": "claude-sonnet-5",
   "needsWorkspace": false,
   "hooks": [],
-  "roles": ["chat"],
   "keywords": ["concierge", "orchestrator", "triage", "clanker", "claude"],
   "author": { "name": "techsavvyash", "github": "techsavvyash" },
   "license": "MIT",

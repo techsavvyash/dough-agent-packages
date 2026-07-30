@@ -22,7 +22,6 @@ const CLAUDE_BASE = {
   description: 'd',
   runtime: 'claude',
   needsWorkspace: false,
-  roles: ['chat'],
 };
 
 describe('resolveManifest inlining', () => {
@@ -137,7 +136,6 @@ describe('loadPackage errors', () => {
         description: 'd',
         runtime: 'node',
         needsWorkspace: false,
-        roles: ['chat'],
         entrypoint: 'src/main.ts',
         readmeFile: './README.md',
       });

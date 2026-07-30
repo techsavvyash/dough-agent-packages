@@ -1,12 +1,11 @@
 {
   "id": "default",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "General-purpose chat assistant. No repository access.",
   "runtime": "claude",
   "model": null,
   "needsWorkspace": false,
   "hooks": [],
-  "roles": ["chat"],
   "keywords": ["chat", "assistant", "general-purpose", "claude"],
   "author": { "name": "techsavvyash", "github": "techsavvyash" },
   "license": "MIT",

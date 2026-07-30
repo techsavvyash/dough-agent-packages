@@ -35,7 +35,6 @@ const claude = (): Raw => ({
   description: 'd',
   runtime: 'claude',
   needsWorkspace: false,
-  roles: ['chat'],
   systemPrompt: 'hi',
   hooks: [],
 });
@@ -45,7 +44,6 @@ const node = (): Raw => ({
   description: 'nd',
   runtime: 'node',
   needsWorkspace: false,
-  roles: ['chat'],
   entrypoint: 'src/main.ts',
   toolchains: { node: '20' },
 });
@@ -55,33 +53,34 @@ const clanker = (): Raw => ({
   description: 'cd',
   runtime: 'clanker',
   needsWorkspace: false,
-  roles: ['chat'],
   clankerAgent: { id: 'inner', instructions: 'go', extra: null, nested: { a: null, b: 1 } },
 });
 
 describe('golden digests (captured from cross-repo gateway parity)', () => {
-  // These strings are the gateway's `manifestDigest` output for each fixture.
-  // Do not hand-edit: regenerate only via a verified parity run.
+  // These strings are the `manifestDigest` output for each fixture (roles-free
+  // manifests — `roles` was removed from the package format, so it no longer
+  // participates in the canonical digest). Do not hand-edit: regenerate only via
+  // a verified parity run against the (roles-free) gateway digest.
   test('claude', () => {
     expect(manifestDigest(claude())).toBe(
-      'sha256:dc8fd6970df94924d97c61635f31fc7f6d566244ac5e117aa88ffec28906d70f',
+      'sha256:7f5a20ac441a2b299b95fe6e18b605d2c5ef19000189f314c2e13692fe0b71fa',
     );
   });
   test('node', () => {
     expect(manifestDigest(node())).toBe(
-      'sha256:2bee97bb286898b5cbdc90fe63e7ed55b59252dde9fbf3e1fadd3d0ff8f6770e',
+      'sha256:0d38b1743d2f29bb9b173e75b5b7970391cb371c27e4a3b3cae38120a41f3980',
     );
   });
   test('clanker (with nulls inside clankerAgent)', () => {
     expect(manifestDigest(clanker())).toBe(
-      'sha256:fda3859ea234f924bf6d62f9a04bff589e20f9a7b5d28f9a78ad19f1864e3184',
+      'sha256:3ef85cfa51fd7faf0c80f8ddb0e480a1c0959f58acc0268139a685c23c536867',
     );
   });
 
   test('canonical string projects to the parsed server shape (no version/promptFile)', () => {
     // version is stripped; keys sorted; defaults present.
     expect(canonicalManifestJson(claude())).toBe(
-      '{"description":"d","hooks":[],"id":"demo","needsWorkspace":false,"roles":["chat"],"runtime":"claude","systemPrompt":"hi"}',
+      '{"description":"d","hooks":[],"id":"demo","needsWorkspace":false,"runtime":"claude","systemPrompt":"hi"}',
     );
   });
 });
@@ -124,7 +123,6 @@ describe('parity rules', () => {
     const permuted: Raw = {
       hooks: [],
       systemPrompt: 'hi',
-      roles: ['chat'],
       needsWorkspace: false,
       runtime: 'claude',
       description: 'd',
@@ -144,9 +142,9 @@ describe('parity rules', () => {
     expect(manifestDigest(withoutInnerNull)).not.toBe(manifestDigest(clanker()));
   });
 
-  test('array order is load-bearing (roles reorder changes the digest)', () => {
-    const a = manifestDigest({ ...claude(), roles: ['reviewer', 'coder'] });
-    const b = manifestDigest({ ...claude(), roles: ['coder', 'reviewer'] });
+  test('array order is load-bearing (modalities reorder changes the digest)', () => {
+    const a = manifestDigest({ ...claude(), modalities: ['text', 'image'] });
+    const b = manifestDigest({ ...claude(), modalities: ['image', 'text'] });
     expect(a).not.toBe(b);
   });
 

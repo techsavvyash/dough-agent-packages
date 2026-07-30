@@ -56,7 +56,7 @@ describe('extraction fidelity', () => {
     for (const id of BUILTINS) {
       const def = resolveManifest(loadPackage(join(AGENTS, id)));
       expect(def.id).toBe(id);
-      expect(def.roles.length).toBeGreaterThan(0);
+      expect(def.runtime.length).toBeGreaterThan(0);
     }
   });
 });

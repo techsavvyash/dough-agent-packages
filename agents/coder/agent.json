@@ -1,6 +1,6 @@
 {
   "id": "coder",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Implements a change in a target repo and opens a pull request.",
   "runtime": "claude",
   "model": null,
@@ -13,7 +13,6 @@
     { "event": "on-operator-message", "kind": "steer-receive" },
     { "event": "on-turn-completed", "kind": "steer-continuation" }
   ],
-  "roles": ["coder"],
   "keywords": ["github", "coding", "pull-request", "claude"],
   "author": { "name": "techsavvyash", "github": "techsavvyash" },
   "license": "MIT",

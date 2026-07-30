@@ -41,7 +41,6 @@ conveniences resolved away at publish time:
 | `model`, `maxTurns` | execution knobs (per-runtime rules — see below) |
 | `needsWorkspace`, `workspaceMode` | git-checkout requirements |
 | `hooks` | platform hook bindings (`setup-workspace`, `post-pr-review`, …) |
-| `roles` | `reviewer` \| `coder` \| `fixer` \| `chat` — platform classification |
 | `keywords`, `author`, `license`, `repository`, `homepage`, `maintainers` | npm-style metadata |
 | `promptFile` | → inlined into `systemPrompt` at publish, then stripped |
 | `readmeFile` | → inlined into `readme` at publish, then stripped |
