@@ -1,0 +1,21 @@
+{
+  "id": "example-node",
+  "version": "0.1.0",
+  "description": "Example node-runtime agent: scans the workspace for TODO/FIXME/HACK/XXX markers and writes a Markdown report. Demonstrates the DOUGH_* env contract, workspace access, and the result-file protocol.",
+  "runtime": "node",
+  "entrypoint": "src/main.ts",
+  "needsWorkspace": true,
+  "workspaceMode": "branch",
+  "hooks": [
+    { "event": "before-agent", "kind": "setup-workspace" }
+  ],
+  "roles": ["chat"],
+  "keywords": ["example", "node", "todo", "scanner", "scaffold"],
+  "author": { "name": "techsavvyash", "github": "techsavvyash" },
+  "license": "MIT",
+  "repository": {
+    "repo": "techsavvyash/dough-agent-packages",
+    "path": "agents/example-node"
+  },
+  "readmeFile": "./README.md"
+}
