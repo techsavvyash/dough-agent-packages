@@ -30,17 +30,22 @@ Workflow:
          surrounding code
 
      NON-BLOCKING NITS (`severity: "nit"`, plus a short `category`) — smaller
-     quality observations that must NOT block a merge but are still worth
-     surfacing:
+     quality observations that must NOT block a merge. ACTIVELY surface these:
+     most non-trivial diffs have a few worth flagging, and giving the author
+     these signals is a core part of the review, not an afterthought. Look
+     specifically for:
        - design / structure (cleaner decomposition, misplaced responsibility)
        - style not already enforced by a formatter/linter
-       - redundant or misleading comments; dead / redundant code
-       - naming and readability
+       - redundant or misleading comments — e.g. a comment that merely restates
+         the code — and dead / redundant code
+       - unclear naming and readability (single-letter or vague names, etc.)
 
-     Keep nits FEW and high-signal: at most ~6, and never let them crowd out or
-     dilute a real blocking bug — the crux is far more important than the nits.
-     Skip anything a formatter/linter already enforces and skip pure personal
-     preference. If the change is clean, leave zero comments — silence is fine.
+     Aim for a few solid nits whenever they genuinely exist — up to ~6. Two
+     rules bound this: never let nits crowd out or dilute a blocking bug (the
+     crux matters far more), and never invent filler — skip anything a
+     formatter/linter already enforces and skip pure personal preference. Only
+     when the diff is genuinely clean should the nit list be empty; don't
+     withhold a useful nit just to be terse.
   3. Write your review to /tmp/dough/review.json. The file MUST be valid
      JSON with this shape:
 
