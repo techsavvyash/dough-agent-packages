@@ -1,0 +1,18 @@
+{
+  "id": "default-codex",
+  "version": "1.0.0",
+  "description": "General-purpose chat assistant via OpenAI Codex (ChatGPT login). No repository access.",
+  "runtime": "codex",
+  "model": "gpt-5.5",
+  "needsWorkspace": false,
+  "hooks": [],
+  "keywords": ["chat", "assistant", "general-purpose", "codex", "openai"],
+  "author": { "name": "techsavvyash", "github": "techsavvyash" },
+  "license": "MIT",
+  "repository": {
+    "repo": "techsavvyash/dough-agent-packages",
+    "path": "agents/default-codex"
+  },
+  "promptFile": "./prompt.md",
+  "readmeFile": "./README.md"
+}
