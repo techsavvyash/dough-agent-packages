@@ -17,17 +17,35 @@ Workflow:
        git diff "$DOUGH_PR_BASE_SHA".."$DOUGH_PR_HEAD_SHA"
      Also skim `git log "$DOUGH_PR_BASE_SHA"..HEAD` for commit-message
      intent. Read project-local CLAUDE.md (or AGENTS.md) if it exists.
-  2. For each changed file, decide whether there are concrete, actionable
-     review comments. Focus on:
+  2. For each changed file, decide what to comment on. Every inline comment
+     declares one of TWO tiers via `severity`:
+
+     BLOCKING (`severity: "blocking"`) — the crux; these set the verdict and
+     matter most. Be thorough and sharp here:
        - Logic bugs and incorrect behavior
        - Security issues (injection, auth bypass, secret leakage)
        - Concurrency / data-race issues
        - Public-API breakage
        - Clear deviations from project conventions visible in the
          surrounding code
-     Do NOT comment on style nits already enforced by formatters, or on
-     personal preferences. Quality over quantity — five sharp comments
-     beat fifty mediocre ones.
+
+     NON-BLOCKING NITS (`severity: "nit"`, plus a short `category`) — smaller
+     quality observations that must NOT block a merge. ACTIVELY surface these:
+     most non-trivial diffs have a few worth flagging, and giving the author
+     these signals is a core part of the review, not an afterthought. Look
+     specifically for:
+       - design / structure (cleaner decomposition, misplaced responsibility)
+       - style not already enforced by a formatter/linter
+       - redundant or misleading comments — e.g. a comment that merely restates
+         the code — and dead / redundant code
+       - unclear naming and readability (single-letter or vague names, etc.)
+
+     Aim for a few solid nits whenever they genuinely exist — up to ~6. Two
+     rules bound this: never let nits crowd out or dilute a blocking bug (the
+     crux matters far more), and never invent filler — skip anything a
+     formatter/linter already enforces and skip pure personal preference. Only
+     when the diff is genuinely clean should the nit list be empty; don't
+     withhold a useful nit just to be terse.
   3. Write your review to /tmp/dough/review.json. The file MUST be valid
      JSON with this shape:
 
@@ -38,25 +56,35 @@ Workflow:
              "path": "src/path/to/file.ts",
              "line": 42,
              "side": "RIGHT",
-             "body": "<concrete actionable comment>"
+             "severity": "blocking",
+             "body": "<concrete must-fix comment>"
+           },
+           {
+             "path": "src/path/to/file.ts",
+             "line": 8,
+             "side": "RIGHT",
+             "severity": "nit",
+             "category": "naming",
+             "body": "<smaller non-blocking observation>"
            }
          ]
        }
 
-     - You do NOT choose the verdict — the system sets it from your findings:
-         actionable inline comments  → the review REQUESTS CHANGES,
-         no inline comments          → the review APPROVES.
-       So only leave an inline comment when it is genuinely actionable.
-       Put non-blocking observations in `body` and leave `comments` empty;
-       that posts as an approval with notes.
+     - You do NOT choose the verdict — the system derives it from `severity`:
+         ≥1 `blocking` comment           → the review REQUESTS CHANGES,
+         only `nit` comments (or none)   → the review APPROVES.
+       `nit` comments post as inline notes on an APPROVED review, so they are
+       safe to include and never block a merge. Reserve `blocking` for genuine
+       must-fix issues. A comment with NO `severity` is treated as blocking —
+       so always tag nits explicitly as `"severity": "nit"`.
      - `comments` is an array; an empty array is valid (means LGTM → APPROVE).
      - Each inline comment must be anchored to a line that is part of the
        diff. Use `side: "RIGHT"` for added/modified lines; `side: "LEFT"`
        only for deletions you want to call out on the old version.
      - Make /tmp/dough first if it doesn't exist:
          mkdir -p /tmp/dough
-  4. As your LAST line of output, print the count of inline comments you
-     wrote (e.g. "Inline comments: 3").
+  4. As your LAST line of output, print the counts by severity
+     (e.g. "Inline comments: 2 blocking, 3 nits").
 
 Hard rules:
   - Report ONLY through the file: write your findings to
