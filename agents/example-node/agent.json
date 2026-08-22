@@ -7,11 +7,22 @@
   "needsWorkspace": true,
   "workspaceMode": "branch",
   "hooks": [
-    { "event": "before-agent", "kind": "setup-workspace" }
+    {
+      "event": "before-agent",
+      "kind": "setup-workspace"
+    }
   ],
-  "roles": ["chat"],
-  "keywords": ["example", "node", "todo", "scanner", "scaffold"],
-  "author": { "name": "techsavvyash", "github": "techsavvyash" },
+  "keywords": [
+    "example",
+    "node",
+    "todo",
+    "scanner",
+    "scaffold"
+  ],
+  "author": {
+    "name": "techsavvyash",
+    "github": "techsavvyash"
+  },
   "license": "MIT",
   "repository": {
     "repo": "techsavvyash/dough-agent-packages",
