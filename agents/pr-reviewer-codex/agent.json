@@ -1,7 +1,7 @@
 {
   "id": "pr-reviewer-codex",
-  "version": "1.6.0",
-  "description": "Reviews a pull request via OpenAI Codex (ChatGPT login) and posts inline comments — blocking findings set the verdict, plus a few non-blocking design/style/nit notes.",
+  "version": "1.7.0",
+  "description": "High-signal pull request review via OpenAI Codex with evidence-backed findings and actionable GitHub suggestions.",
   "runtime": "codex",
   "model": "gpt-5.5",
   "needsWorkspace": true,
