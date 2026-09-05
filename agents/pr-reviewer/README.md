@@ -18,9 +18,10 @@ single, continuously-updated review — never a pile of bot comments.
    It filters low-confidence and tool-enforced noise, consolidates repeated
    symptoms by root cause, and limits non-blocking nits to three.
 4. Writes its findings to `/tmp/dough/review.json` (a `body` summary plus an
-   array of anchored inline `comments`). Findings explain the problem, impact,
-   evidence, and smallest safe fix, with GitHub suggestion blocks when the
-   exact replacement is unambiguous.
+   optional structured walkthrough and validation report, and an array of
+   anchored inline `comments`). Findings include a short title, severity,
+   category, confidence, impact, evidence, and smallest safe fix, with native
+   GitHub suggestion blocks when the exact replacement is unambiguous.
 
 The agent investigates freely but does **not** post the review itself, and does
 **not** choose the verdict. The system owns the review lifecycle:
@@ -32,6 +33,12 @@ The agent investigates freely but does **not** post the review itself, and does
   requests changes, while a clean or nit-only review approves. Non-blocking
   nits can still appear inline on an approval. Any prior Dough verdict is
   dismissed so only the latest is active.
+
+The formal review uses GitHub-native Markdown rather than a second summary
+comment: a verdict callout and signal table stay visible, while the file
+walkthrough and validation results are collapsed in `<details>` sections.
+Inline findings use callouts with severity, category, and confidence metadata;
+unambiguous fixes use committable `suggestion` fences.
 
 The PR is described via `DOUGH_PR_NUMBER`, `DOUGH_PR_OWNER`, `DOUGH_PR_REPO`,
 `DOUGH_PR_BASE_SHA`, `DOUGH_PR_HEAD_SHA`. It is usually fired automatically when a

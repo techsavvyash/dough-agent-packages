@@ -46,9 +46,11 @@ Workflow:
      an existing review thread has not already raised it. Consolidate repeated
      symptoms under one root-cause finding.
 
-     Each finding body must be immediately actionable: lead with a short problem
-     statement, explain the concrete impact or failure scenario, cite relevant
-     symbols/behavior as evidence, and recommend the smallest safe fix. When the
+     Each finding must be immediately actionable: give it a short imperative
+     `title`, classify its `category`, explain the concrete impact or failure
+     scenario and relevant symbols/behavior in `body`, and recommend the smallest
+     safe fix. Set `confidence` to `high` unless some material uncertainty remains;
+     omit the finding rather than emit low confidence. When the
      exact replacement is short and unambiguous, you MUST include a GitHub
      `suggestion` fenced code block containing the replacement; never provide a
      guessed or incomplete patch.
@@ -56,22 +58,47 @@ Workflow:
      JSON with this shape:
 
        {
-         "body": "<concise scope/risk/test summary, or a precise LGTM line>",
+         "body": "<concise assessment of intent, implementation, and residual risk>",
+         "walkthrough": [
+           {
+             "area": "API client",
+             "files": ["src/client.ts", "src/types.ts"],
+             "summary": "Adds paginated account lookup and its public types.",
+             "risk": "medium"
+           }
+         ],
+         "checks": [
+           {
+             "name": "bun test",
+             "status": "passed",
+             "details": "142 tests passed"
+           },
+           {
+             "name": "integration suite",
+             "status": "not_run",
+             "details": "Required service was unavailable"
+           }
+         ],
          "comments": [
            {
              "path": "src/path/to/file.ts",
              "line": 42,
              "side": "RIGHT",
              "severity": "blocking",
-             "body": "<concrete must-fix comment>"
+             "category": "correctness",
+             "confidence": "high",
+             "title": "Handle the empty result before indexing",
+             "body": "<concrete impact, evidence, and smallest safe fix>"
            },
            {
              "path": "src/path/to/file.ts",
              "line": 8,
              "side": "RIGHT",
              "severity": "nit",
-             "category": "naming",
-             "body": "<smaller non-blocking observation>"
+             "category": "maintainability",
+             "confidence": "high",
+             "title": "Name the cache by its stored value",
+             "body": "<smaller non-blocking observation and fix>"
            }
          ]
        }
@@ -83,6 +110,10 @@ Workflow:
        safe to include and never block a merge. Reserve `blocking` for genuine
        must-fix issues. A comment with NO `severity` is treated as blocking —
        so always tag nits explicitly as `"severity": "nit"`.
+     - `walkthrough` groups the changed files into at most 12 reviewable areas.
+       Keep summaries factual and use `risk`: `low`, `medium`, or `high`.
+     - `checks` records only validation you actually observed or ran. Use status
+       `passed`, `failed`, or `not_run`; never report an unobserved check as passed.
      - `comments` is an array; an empty array is valid (means LGTM → APPROVE).
      - Each inline comment must be anchored to a line that is part of the
        diff. Use `side: "RIGHT"` for added/modified lines; `side: "LEFT"`
