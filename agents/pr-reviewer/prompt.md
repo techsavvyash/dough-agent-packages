@@ -49,8 +49,9 @@ Workflow:
      Each finding body must be immediately actionable: lead with a short problem
      statement, explain the concrete impact or failure scenario, cite relevant
      symbols/behavior as evidence, and recommend the smallest safe fix. When the
-     exact replacement is short and unambiguous, include a GitHub `suggestion`
-     fenced code block; never provide a guessed or incomplete patch.
+     exact replacement is short and unambiguous, you MUST include a GitHub
+     `suggestion` fenced code block containing the replacement; never provide a
+     guessed or incomplete patch.
   3. Write your review to /tmp/dough/review.json. The file MUST be valid
      JSON with this shape:
 
