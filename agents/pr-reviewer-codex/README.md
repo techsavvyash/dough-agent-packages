@@ -26,7 +26,9 @@ The agent investigates freely (reading files, running build/tests, using `gh` to
 the verdict. A marker-owned progress comment appears while it runs. On approval,
 the system deletes that comment and leaves only the formal GitHub review; for a
 non-approval outcome, it finalizes the comment as a sticky summary. Prior dough
-verdicts are dismissed so only the latest is active. It is a separate id
+verdicts are dismissed so only the latest is active. A blocking finding requests
+changes; a clean or nit-only review approves, and non-blocking nits can still
+appear inline on that approval. It is a separate id
 from `pr-reviewer` because task creation locks to the (agent, runtime) pair. The
 PR is described via `DOUGH_PR_NUMBER`, `DOUGH_PR_OWNER`, `DOUGH_PR_REPO`,
 `DOUGH_PR_BASE_SHA`, `DOUGH_PR_HEAD_SHA`.

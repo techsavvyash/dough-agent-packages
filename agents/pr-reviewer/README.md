@@ -28,9 +28,10 @@ The agent investigates freely but does **not** post the review itself, and does
 - a marker-owned **temporary progress comment** appears while the agent runs;
   it is deleted after an approval and finalized as a sticky summary for
   non-approval outcomes, and
-- **one formal GitHub review** carries the verdict — **actionable inline
-  comments → REQUEST CHANGES**, **no inline comments → APPROVE** — with any
-  prior dough verdict dismissed so only the latest is active.
+- **one formal GitHub review** carries the verdict — any **blocking** finding
+  requests changes, while a clean or nit-only review approves. Non-blocking
+  nits can still appear inline on an approval. Any prior Dough verdict is
+  dismissed so only the latest is active.
 
 The PR is described via `DOUGH_PR_NUMBER`, `DOUGH_PR_OWNER`, `DOUGH_PR_REPO`,
 `DOUGH_PR_BASE_SHA`, `DOUGH_PR_HEAD_SHA`. It is usually fired automatically when a
