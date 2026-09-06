@@ -8,30 +8,37 @@ single, continuously-updated review — never a pile of bot comments.
 `pr-reviewer` runs inside a Firecracker VM with the target repo cloned and the
 **head of the pull request checked out**. It:
 
-1. Inspects the diff with `git diff "$DOUGH_PR_BASE_SHA".."$DOUGH_PR_HEAD_SHA"`,
-   skims the commit log for intent, and reads a project-local `CLAUDE.md` if
-   present.
+1. Establishes intent from the diff, commit log, PR description, linked
+   requirements, existing review threads, CI failures, and the `CLAUDE.md` or
+   `AGENTS.md` files governing changed paths.
 2. Investigates as deeply as it needs — reading any file, grepping, running the
    project's build/tests, and using `gh` to **read** context (the PR
    conversation, linked issues, CI logs, related PRs).
-3. For each changed file, decides whether there are concrete, actionable
-   comments — focusing on logic bugs, security issues (injection, auth bypass,
-   secret leakage), concurrency/data-race problems, public-API breakage, and
-   clear deviations from project conventions. It deliberately skips
-   formatter-enforced style nits, favouring quality over quantity.
+3. Reviews in risk order and reports only evidence-backed, reachable issues.
+   It filters low-confidence and tool-enforced noise, consolidates repeated
+   symptoms by root cause, and limits non-blocking nits to three.
 4. Writes its findings to `/tmp/dough/review.json` (a `body` summary plus an
-   array of anchored inline `comments`).
+   optional structured walkthrough and validation report, and an array of
+   anchored inline `comments`). Findings include a short title, severity,
+   category, confidence, impact, evidence, and smallest safe fix, with native
+   GitHub suggestion blocks when the exact replacement is unambiguous.
 
 The agent investigates freely but does **not** post the review itself, and does
-**not** choose the verdict. The system owns exactly two edit-in-place artifacts,
-so re-reviews never clutter the PR:
+**not** choose the verdict. The system owns the review lifecycle:
 
-- a **single sticky comment** that starts as a `🔄 reviewing…` progress
-  indicator and is rewritten to the verdict summary when the review finishes
-  (edited in place on every re-run, never duplicated), and
-- **one formal GitHub review** carrying the verdict — **actionable inline
-  comments → REQUEST CHANGES**, **no inline comments → APPROVE** — with any
-  prior dough verdict dismissed so only the latest is active.
+- a marker-owned **temporary progress comment** appears while the agent runs;
+  it is deleted after an approval and finalized as a sticky summary for
+  non-approval outcomes, and
+- **one formal GitHub review** carries the verdict — any **blocking** finding
+  requests changes, while a clean or nit-only review approves. Non-blocking
+  nits can still appear inline on an approval. Any prior Dough verdict is
+  dismissed so only the latest is active.
+
+The formal review uses GitHub-native Markdown rather than a second summary
+comment: a verdict callout and signal table stay visible, while the file
+walkthrough and validation results are collapsed in `<details>` sections.
+Inline findings use callouts with severity, category, and confidence metadata;
+unambiguous fixes use committable `suggestion` fences.
 
 The PR is described via `DOUGH_PR_NUMBER`, `DOUGH_PR_OWNER`, `DOUGH_PR_REPO`,
 `DOUGH_PR_BASE_SHA`, `DOUGH_PR_HEAD_SHA`. It is usually fired automatically when a
@@ -58,8 +65,8 @@ clanker-agent pull pr-reviewer --registry https://api.try-dough.com/registry
   and posts the `🔄 reviewing…` sticky status comment.
 - **after-agent → post-pr-review**: reads `/tmp/dough/review.json`, posts the
   verdict review (deriving APPROVE / REQUEST_CHANGES from the findings),
-  dismisses any prior dough review, and rewrites the sticky comment to the
-  final verdict.
+  dismisses any prior dough review, and removes the progress comment after an
+  approval or finalizes it for a non-approval outcome.
 - **on-operator-message → steer-receive** and **on-turn-completed →
   steer-continuation**: allow live steering of an in-flight run.
 

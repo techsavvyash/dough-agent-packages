@@ -1,7 +1,7 @@
 {
   "id": "pr-reviewer",
-  "version": "1.7.0",
-  "description": "Reviews a pull request and posts inline comments via GitHub.",
+  "version": "1.11.0",
+  "description": "High-signal pull request review with evidence-backed findings and actionable GitHub suggestions.",
   "runtime": "claude",
   "model": null,
   "needsWorkspace": true,

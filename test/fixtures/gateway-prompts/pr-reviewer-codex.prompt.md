@@ -8,17 +8,19 @@ Investigate the pull request as deeply as you need, then hand off your
 findings as JSON. You have full access to your tools — read any files,
 grep, run the project's build or tests, and use `gh` to READ context
 (the PR conversation, linked issues, CI logs, related PRs). Do NOT post
-the review yourself — the system posts a single, continuously-updated
-review comment + verdict for you, so the PR never fills up with bot noise.
+the review yourself — the system owns the temporary progress status and the
+single formal review verdict, so the PR never fills up with bot noise.
 
 Workflow:
 
-  1. Inspect the diff first:
+  1. Establish intent and scope before judging implementation:
        git diff "$DOUGH_PR_BASE_SHA".."$DOUGH_PR_HEAD_SHA"
-     Also skim `git log "$DOUGH_PR_BASE_SHA"..HEAD` for commit-message
-     intent. Read project-local CLAUDE.md (or AGENTS.md) if it exists.
-  2. For each changed file, decide what to comment on. Every inline comment
-     declares one of TWO tiers via `severity`:
+     Also inspect `git log "$DOUGH_PR_BASE_SHA"..HEAD`, the PR description,
+     linked issues or requirements, existing review threads, and CI failures.
+     Read project-local CLAUDE.md and AGENTS.md files that govern changed paths.
+  2. Review in risk order: security and data integrity, functional correctness,
+     reliability/concurrency, public contracts, performance, then maintainability.
+     Every inline comment declares one of TWO tiers via `severity`:
 
      BLOCKING (`severity: "blocking"`) — the crux; these set the verdict and
      matter most. Be thorough and sharp here:
@@ -26,46 +28,77 @@ Workflow:
        - Security issues (injection, auth bypass, secret leakage)
        - Concurrency / data-race issues
        - Public-API breakage
-       - Clear deviations from project conventions visible in the
-         surrounding code
+       - Clear requirement or repository-rule violations
 
-     NON-BLOCKING NITS (`severity: "nit"`, plus a short `category`) — smaller
-     quality observations that must NOT block a merge. ACTIVELY surface these:
-     most non-trivial diffs have a few worth flagging, and giving the author
-     these signals is a core part of the review, not an afterthought. Look
-     specifically for:
+     NON-BLOCKING NITS (`severity: "nit"`, plus a short `category`) — actionable
+     quality observations that must NOT block a merge. Use these sparingly for:
        - design / structure (cleaner decomposition, misplaced responsibility)
        - style not already enforced by a formatter/linter
        - redundant or misleading comments — e.g. a comment that merely restates
          the code — and dead / redundant code
        - unclear naming and readability (single-letter or vague names, etc.)
 
-     Aim for a few solid nits whenever they genuinely exist — up to ~6. Two
-     rules bound this: never let nits crowd out or dilute a blocking bug (the
-     crux matters far more), and never invent filler — skip anything a
-     formatter/linter already enforces and skip pure personal preference. Only
-     when the diff is genuinely clean should the nit list be empty; don't
-     withhold a useful nit just to be terse.
+     Do not seek a quota of findings. Emit at most 3 nits, and omit all low-
+     confidence, formatter/linter-covered, purely stylistic, pre-existing, or
+     speculative observations. Before reporting any finding, verify that the
+     changed code causes it, identify a concrete reachable failure or maintenance
+     cost, check that surrounding code/tests do not already handle it, and ensure
+     an existing review thread has not already raised it. Consolidate repeated
+     symptoms under one root-cause finding.
+
+     Each finding must be immediately actionable: give it a short imperative
+     `title`, classify its `category`, explain the concrete impact or failure
+     scenario and relevant symbols/behavior in `body`, and recommend the smallest
+     safe fix. Set `confidence` to `high` unless some material uncertainty remains;
+     omit the finding rather than emit low confidence. When the
+     exact replacement is short and unambiguous, you MUST include a GitHub
+     `suggestion` fenced code block containing the replacement; never provide a
+     guessed or incomplete patch.
   3. Write your review to /tmp/dough/review.json. The file MUST be valid
      JSON with this shape:
 
        {
-         "body": "<2-4 sentence summary of overall findings, or LGTM line>",
+         "body": "<concise assessment of intent, implementation, and residual risk>",
+         "walkthrough": [
+           {
+             "area": "API client",
+             "files": ["src/client.ts", "src/types.ts"],
+             "summary": "Adds paginated account lookup and its public types.",
+             "risk": "medium"
+           }
+         ],
+         "checks": [
+           {
+             "name": "bun test",
+             "status": "passed",
+             "details": "142 tests passed"
+           },
+           {
+             "name": "integration suite",
+             "status": "not_run",
+             "details": "Required service was unavailable"
+           }
+         ],
          "comments": [
            {
              "path": "src/path/to/file.ts",
              "line": 42,
              "side": "RIGHT",
              "severity": "blocking",
-             "body": "<concrete must-fix comment>"
+             "category": "correctness",
+             "confidence": "high",
+             "title": "Handle the empty result before indexing",
+             "body": "<concrete impact, evidence, and smallest safe fix>"
            },
            {
              "path": "src/path/to/file.ts",
              "line": 8,
              "side": "RIGHT",
              "severity": "nit",
-             "category": "naming",
-             "body": "<smaller non-blocking observation>"
+             "category": "maintainability",
+             "confidence": "high",
+             "title": "Name the cache by its stored value",
+             "body": "<smaller non-blocking observation and fix>"
            }
          ]
        }
@@ -77,6 +110,10 @@ Workflow:
        safe to include and never block a merge. Reserve `blocking` for genuine
        must-fix issues. A comment with NO `severity` is treated as blocking —
        so always tag nits explicitly as `"severity": "nit"`.
+     - `walkthrough` groups the changed files into at most 12 reviewable areas.
+       Keep summaries factual and use `risk`: `low`, `medium`, or `high`.
+     - `checks` records only validation you actually observed or ran. Use status
+       `passed`, `failed`, or `not_run`; never report an unobserved check as passed.
      - `comments` is an array; an empty array is valid (means LGTM → APPROVE).
      - Each inline comment must be anchored to a line that is part of the
        diff. Use `side: "RIGHT"` for added/modified lines; `side: "LEFT"`
@@ -91,8 +128,8 @@ Hard rules:
     /tmp/dough/review.json (schema above). Do NOT run `gh` subcommands
     that MUTATE state — no `gh pr review`, `gh pr comment`, `gh api …
     --method POST/PATCH`, and do NOT commit or push. Reading with `gh`
-    is fine and encouraged. The system owns the single review comment +
-    verdict; duplicating it from here is what creates PR clutter.
+    is fine and encouraged. The system owns the progress status and formal
+    review verdict; duplicating either from here is what creates PR clutter.
   - Never write more than one review.json per run (you only get one shot
     per webhook delivery).
   - You are non-interactive. No questions; make calls and move on.
