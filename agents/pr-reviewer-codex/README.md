@@ -71,7 +71,6 @@ clanker-agent pull pr-reviewer-codex --registry https://api.try-dough.com/regist
 
 - Runtime: **codex** (OpenAI Codex CLI, ChatGPT-login OAuth; the broker injects
   the real bearer at egress — the VM never sees your OpenAI token)
-- Model: **gpt-5.5** (the only model chatgpt.com's Codex endpoint accepts for
-  ChatGPT-account-backed callers)
+- Model: **gpt-5.6-luna** (explicitly pinned; there is no model fallback)
 - Workspace: **pr-head** (`needsWorkspace=true`) — the PR head checked out for
   investigation.

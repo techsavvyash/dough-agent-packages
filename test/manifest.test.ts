@@ -67,6 +67,10 @@ describe('runtime shape matrix', () => {
     rejects({ ...codex, maxTurns: 30 }, "codex runtime forbids 'maxTurns'");
   });
 
+  test('codex requires an explicit model so the CLI cannot select a fallback', () => {
+    rejects({ ...baseClaude(), runtime: 'codex' }, 'codex runtime requires an explicit model');
+  });
+
   test('clanker requires clankerAgent and forbids prompt/entrypoint', () => {
     const clanker: Record<string, unknown> = {
       id: 'c',

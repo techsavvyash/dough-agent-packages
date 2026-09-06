@@ -285,6 +285,9 @@ export const agentManifestSchema = z
         if (!hasPrompt) {
           issue(ctx, ['promptFile'], `codex runtime requires a systemPrompt (via promptFile)`);
         }
+        if (def.model == null) {
+          issue(ctx, ['model'], 'codex runtime requires an explicit model; no CLI fallback is allowed');
+        }
         forbid(ctx, def, 'maxTurns', 'codex');
         forbid(ctx, def, 'entrypoint', 'codex');
         forbid(ctx, def, 'clankerAgent', 'codex');

@@ -1,9 +1,9 @@
 {
   "id": "pr-reviewer-codex",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "description": "High-signal pull request review via OpenAI Codex with evidence-backed findings and actionable GitHub suggestions.",
   "runtime": "codex",
-  "model": "gpt-5.5",
+  "model": "gpt-5.6-luna",
   "needsWorkspace": true,
   "workspaceMode": "pr-head",
   "hooks": [
