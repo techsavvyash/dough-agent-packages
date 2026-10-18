@@ -1,6 +1,6 @@
 {
   "id": "concierge",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Dough's always-on concierge: answers, acts on the user's connected services, hands longer work to agents, and helps new people get set up.",
   "runtime": "claude",
   "model": "claude-sonnet-5",
