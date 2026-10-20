@@ -105,7 +105,7 @@ describe('publish dispatch on kind', () => {
   test('a conflicting template (409) fails the run with a bump-the-version error', async () => {
     const { fetchImpl } = gateway(409, { statusCode: 409, message: 'conflict' });
     expect(await cmdPublish([CONCIERGE, DEFAULT], ENV, fetchImpl)).toBe(1);
-    expect(errors.join('\n')).toContain('bump "version" in agents/concierge/agent.json');
+    expect(errors.join('\n')).toContain(`bump "version" in ${CONCIERGE}/agent.json`);
     // The other package still publishes.
     expect(logs.at(-1)).toContain('published 1, skipped 0, failed 1');
   });

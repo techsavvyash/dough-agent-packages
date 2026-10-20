@@ -123,7 +123,7 @@ describe('loadTemplate', () => {
 
   test('the directory name must be the template id', () => {
     const issues = issuesOf(() => loadTemplate(templateDir('other', { 'agent.json': JSON.stringify(MINIMAL) })));
-    expect(issues).toEqual(['directory name "other" must equal the template id "mini"']);
+    expect(issues).toEqual(['directory name "other" must equal the template name "mini" (of id "mini")']);
   });
 
   test('missing or invalid agent.json', () => {
@@ -193,8 +193,9 @@ describe('agent.json schema', () => {
   test('identity: kind "app", slug id, strict semver, non-empty description', () => {
     expect(schemaIssues({ ...MINIMAL, kind: 'task' })[0]).toStartWith('kind: ');
     expect(schemaIssues({ ...MINIMAL, id: 'Bad_Id' })).toEqual([
-      'id: must be lowercase letters, digits and "-"',
+      'id: must be a template name (lowercase letters, digits and "-") or "@<team-slug>/<name>"',
     ]);
+    expect(schemaIssues({ ...MINIMAL, id: '@acme/support-bot' })).toEqual([]);
     const semver = 'version: version must be strict semver without build metadata (e.g. 1.4.0 or 1.4.0-rc.1)';
     expect(schemaIssues({ ...MINIMAL, version: '1.0' })).toEqual([semver]);
     expect(schemaIssues({ ...MINIMAL, version: '1.0.0+build.1' })).toEqual([semver]);
@@ -545,6 +546,25 @@ describe('publishTemplate', () => {
     ).rejects.toThrow('response carries no template.digest');
   });
 
+  test('deprecated is sent only when agent.json has it, verbatim (absent leaves the stored flag alone)', async () => {
+    for (const [extra, expected] of [
+      [{}, 'absent'],
+      [{ deprecated: false }, false],
+      [{ deprecated: true }, true],
+    ] as const) {
+      const seen: Request[] = [];
+      const loaded = loadTemplate(templateDir('mini', { 'agent.json': JSON.stringify({ ...MINIMAL, ...extra }) }));
+      await publishTemplate({
+        gatewayUrl: 'https://gw.test',
+        token: 'tok',
+        body: loaded,
+        fetchImpl: fakeFetch(201, ok('created', templateDigest(loaded)), seen),
+      });
+      const sent = (await seen[0]!.json()) as { template: Record<string, unknown> };
+      expect('deprecated' in sent.template ? sent.template.deprecated : 'absent').toBe(expected);
+    }
+  });
+
   test('a transport failure is a TemplatePublishError', async () => {
     const failing = (async () => {
       throw new Error('ECONNREFUSED');
@@ -648,6 +668,41 @@ const GATEWAY_TEMPLATE = join(
   'domain',
   'agent-template.ts',
 );
+
+type GatewayTemplateModule = {
+  publishAgentTemplateBodySchema: {
+    safeParse: (v: unknown) => { success: boolean; data?: { template: unknown; files?: Record<string, string> } };
+  };
+  normalizeAgentTemplateJson: (t: unknown) => unknown;
+  agentTemplateDigest: (t: unknown, files: Record<string, string>) => string;
+};
+const gatewayModule: GatewayTemplateModule | undefined = existsSync(GATEWAY_TEMPLATE)
+  ? ((await import(GATEWAY_TEMPLATE)) as GatewayTemplateModule)
+  : undefined;
+/** A gateway checkout that already knows team namespaces (Part C). */
+const gatewayHasTeams =
+  gatewayModule?.publishAgentTemplateBodySchema.safeParse({ template: { ...FULL, id: '@acme/tess' }, files: FULL_FILES })
+    .success === true;
+
+describe.if(gatewayHasTeams)('live gateway parity: team namespaces', () => {
+  test('team templates digest under their bare name on both sides', () => {
+    const gw = gatewayModule!;
+    const digests = ['@acme/tess', '@acme-corp/tess', 'tess'].map((id) => {
+      const raw = { ...FULL, id };
+      const parsed = gw.publishAgentTemplateBodySchema.safeParse({ template: raw, files: FULL_FILES });
+      expect(parsed.success).toBe(true);
+      const gatewayDigest = gw.agentTemplateDigest(gw.normalizeAgentTemplateJson(parsed.data!.template), FULL_FILES);
+      expect(templateDigest({ template: agentTemplateJsonSchema.parse(raw), files: FULL_FILES })).toBe(gatewayDigest);
+      return gatewayDigest;
+    });
+    expect(new Set(digests).size).toBe(1);
+    for (const id of ['acme/tess', '@Acme/tess', '@acme-/tess']) {
+      const raw = { ...FULL, id };
+      expect(gw.publishAgentTemplateBodySchema.safeParse({ template: raw, files: FULL_FILES }).success).toBe(false);
+      expect(agentTemplateJsonSchema.safeParse(raw).success).toBe(false);
+    }
+  });
+});
 
 describe.if(existsSync(GATEWAY_TEMPLATE))('live gateway parity', () => {
   test('the gateway accepts these templates and digests them exactly as the CLI does', async () => {

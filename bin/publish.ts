@@ -19,8 +19,12 @@ import {
   type AgentTemplateBody,
   AgentTemplateError,
   PackageKind,
+  OPERATOR_TOKEN_ENV,
+  TEMPLATE_TOKEN_ENV,
   TemplatePublishError,
   TemplatePublishOutcomeKind,
+  TemplateTokenError,
+  selectTemplateToken,
   loadTemplate,
   packageKind,
   publishTemplate,
@@ -34,13 +38,17 @@ import { ManifestValidationError } from './manifest.ts';
 
 interface CliEnv {
   gatewayUrl: string | undefined;
+  /** The operator token: registry agents and platform templates. */
   publishToken: string | undefined;
+  /** A team's template publish token (`tpt_…`): `@<team>/<name>` templates. */
+  templateToken?: string | undefined;
 }
 
 function readEnv(): CliEnv {
   return {
     gatewayUrl: process.env.DOUGH_GATEWAY_URL,
-    publishToken: process.env.AGENT_REGISTRY_PUBLISH_TOKEN,
+    publishToken: process.env[OPERATOR_TOKEN_ENV],
+    templateToken: process.env[TEMPLATE_TOKEN_ENV],
   };
 }
 
@@ -142,16 +150,16 @@ async function cmdPublish(dirs: string[], env: CliEnv, fetchImpl?: typeof fetch)
     console.error('publish: DOUGH_GATEWAY_URL is not set');
     return 2;
   }
-  if (!env.publishToken) {
-    console.error('publish: AGENT_REGISTRY_PUBLISH_TOKEN is not set');
+  if (!env.publishToken && !env.templateToken) {
+    console.error(`publish: neither ${OPERATOR_TOKEN_ENV} nor ${TEMPLATE_TOKEN_ENV} is set`);
     return 2;
   }
-
-  const client = new RegistryClient({
-    baseUrl: env.gatewayUrl,
-    token: env.publishToken,
-    ...(fetchImpl ? { fetchImpl } : {}),
-  });
+  // Which token each package needs depends on it (registry agent, platform or
+  // team template); a package whose token is missing fails on its own.
+  const gatewayUrl = env.gatewayUrl;
+  const client = env.publishToken
+    ? new RegistryClient({ baseUrl: gatewayUrl, token: env.publishToken, ...(fetchImpl ? { fetchImpl } : {}) })
+    : undefined;
 
   let failures = 0;
   let published = 0;
@@ -169,9 +177,10 @@ async function cmdPublish(dirs: string[], env: CliEnv, fetchImpl?: typeof fetch)
       const { body } = loaded;
       try {
         const outcome = await publishTemplate({
-          gatewayUrl: env.gatewayUrl,
-          token: env.publishToken,
+          gatewayUrl,
+          token: selectTemplateToken(body.template.id, env),
           body,
+          dir,
           ...(fetchImpl ? { fetchImpl } : {}),
         });
         if (outcome.outcome === TemplatePublishOutcomeKind.Created) {
@@ -192,6 +201,11 @@ async function cmdPublish(dirs: string[], env: CliEnv, fetchImpl?: typeof fetch)
       continue;
     }
     const { def } = loaded;
+    if (client === undefined) {
+      failures++;
+      console.error(`ERR ${dir}: registry agent ${def.id}@${def.version} needs ${OPERATOR_TOKEN_ENV}`);
+      continue;
+    }
     try {
       // Pass the package dir so a node-runtime publish can pack + upload its
       // bundle before the manifest PUT (design §2 step 3); non-node runtimes
@@ -230,7 +244,8 @@ function reportPackageError(dir: string, err: unknown): void {
     err instanceof PackageIoError ||
     err instanceof ImmutabilityError ||
     err instanceof RegistryError ||
-    err instanceof TemplatePublishError
+    err instanceof TemplatePublishError ||
+    err instanceof TemplateTokenError
   ) {
     console.error(`ERR ${dir}: ${err.message}`);
   } else if (err instanceof AgentTemplateError) {
@@ -281,8 +296,9 @@ function printUsage(): void {
       '(PUT /v1/agent-templates/:id/:version).',
       '',
       'env (publish):',
-      '  DOUGH_GATEWAY_URL              registry base URL',
-      '  AGENT_REGISTRY_PUBLISH_TOKEN  operator publish token',
+      '  DOUGH_GATEWAY_URL              gateway base URL',
+      '  AGENT_REGISTRY_PUBLISH_TOKEN  operator token: registry agents + platform templates',
+      '  DOUGH_TEMPLATE_TOKEN          team token (tpt_…): "@<team>/<name>" templates',
     ].join('\n'),
   );
 }
