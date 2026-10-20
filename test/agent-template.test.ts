@@ -652,7 +652,9 @@ const GATEWAY_TEMPLATE = join(
 describe.if(existsSync(GATEWAY_TEMPLATE))('live gateway parity', () => {
   test('the gateway accepts these templates and digests them exactly as the CLI does', async () => {
     const gw = (await import(GATEWAY_TEMPLATE)) as {
-      publishAgentTemplateBodySchema: { safeParse: (v: unknown) => { success: boolean; error?: unknown } };
+      publishAgentTemplateBodySchema: {
+        safeParse: (v: unknown) => { success: boolean; data?: { template: unknown; files?: Record<string, string> } };
+      };
       normalizeAgentTemplateJson: (t: unknown) => unknown;
       agentTemplateDigest: (t: unknown, files: Record<string, string>) => string;
     };
@@ -663,13 +665,30 @@ describe.if(existsSync(GATEWAY_TEMPLATE))('live gateway parity', () => {
       { raw: { ...rawConcierge, deprecated: true }, files: loadTemplate(concierge).files },
       { raw: MINIMAL, files: {} },
       { raw: FULL, files: FULL_FILES },
+      // Stray whitespace: both sides trim description and seed.assistantName only.
+      {
+        raw: {
+          ...FULL,
+          description: '  test template\n',
+          seed: { ...FULL.seed, assistantName: '\tTess  ' },
+        },
+        files: FULL_FILES,
+      },
     ];
     for (const { raw, files } of cases) {
+      // Both sides digest the PARSED template, exactly as their publish paths do.
       const parsed = gw.publishAgentTemplateBodySchema.safeParse({ template: raw, files });
       expect(parsed.success).toBe(true);
-      const ours = templateDigest({ template: raw as AgentTemplate, files });
-      expect(gw.agentTemplateDigest(gw.normalizeAgentTemplateJson(raw), files)).toBe(ours);
+      const gatewayDigest = gw.agentTemplateDigest(gw.normalizeAgentTemplateJson(parsed.data!.template), files);
+      const ours = templateDigest({ template: agentTemplateJsonSchema.parse(raw), files });
+      expect(ours).toBe(gatewayDigest);
     }
     expect(templateDigest(loadTemplate(concierge))).toBe(CONCIERGE_TEMPLATE_DIGEST);
+    // The padded case digests like the unpadded FULL template on both sides.
+    const full = gw.publishAgentTemplateBodySchema.safeParse({ template: FULL, files: FULL_FILES });
+    const padded = gw.publishAgentTemplateBodySchema.safeParse({ template: cases.at(-1)!.raw, files: FULL_FILES });
+    expect(gw.agentTemplateDigest(gw.normalizeAgentTemplateJson(padded.data!.template), FULL_FILES)).toBe(
+      gw.agentTemplateDigest(gw.normalizeAgentTemplateJson(full.data!.template), FULL_FILES),
+    );
   });
 });
