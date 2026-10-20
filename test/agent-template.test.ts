@@ -18,7 +18,6 @@ import {
   templateDigest,
   validateTemplateFiles,
 } from '../bin/agent-template.ts';
-import { canonicalJson } from '../bin/digest.ts';
 
 const roots: string[] = [];
 
@@ -575,21 +574,39 @@ describe('publishTemplate', () => {
   });
 });
 
+/** The directories under `root` whose agent.json has kind "app", sorted. */
+function appTemplateDirs(root: string): string[] {
+  return readdirSync(root, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .filter((name) => packageKind(JSON.parse(readFileSync(join(root, name, 'agent.json'), 'utf8'))) === 'app')
+    .sort();
+}
+
+const FIXTURE_TEMPLATES = join(import.meta.dir, 'fixtures', 'templates');
+const EXAMPLE_ASSISTANT = join(FIXTURE_TEMPLATES, 'example-assistant');
+
 describe('app templates in this repo', () => {
   const AGENTS = join(import.meta.dir, '..', 'agents');
-  const CONCIERGE = join(AGENTS, 'concierge');
 
-  test('every kind "app" directory under agents/ is a valid template', () => {
-    const templates = readdirSync(AGENTS, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name)
-      .filter((name) => packageKind(JSON.parse(readFileSync(join(AGENTS, name, 'agent.json'), 'utf8'))) === 'app');
-    expect(templates).toEqual(['concierge']);
-    for (const name of templates) expect(loadTemplate(join(AGENTS, name)).template.id).toBe(name);
+  test('agents/ holds no app templates: dashboard-managed agents live on the dashboard', () => {
+    const templates = appTemplateDirs(AGENTS);
+    expect(templates).toEqual([]);
+    // agents/ still holds the registry agents.
+    expect(readdirSync(AGENTS).length).toBeGreaterThan(0);
   });
 
-  test('concierge 1.0.0: worker sub-agent, every ceiling on, Dough seed', () => {
-    const { template, files } = loadTemplate(CONCIERGE);
+  test('every fixture template directory is a valid template named after its directory', () => {
+    const templates = appTemplateDirs(FIXTURE_TEMPLATES);
+    expect(templates).toEqual(['example-assistant']);
+    for (const name of templates) expect(loadTemplate(join(FIXTURE_TEMPLATES, name)).template.id).toBe(name);
+  });
+});
+
+describe('a full template loaded from disk (fixture example-assistant)', () => {
+  test('1.0.0: worker sub-agent, every ceiling on, full seed', () => {
+    const { template, files } = loadTemplate(EXAMPLE_ASSISTANT);
+    expect(template.id).toBe('example-assistant');
     expect(template.version).toBe('1.0.0');
     expect(template.model).toBe('gpt-6-luna');
     expect(template.tools).toEqual({
@@ -601,6 +618,7 @@ describe('app templates in this repo', () => {
       webSearch: true,
     });
     expect(template.approvals).toBe(true);
+    expect(template.deprecated).toBeUndefined();
     expect(template.subAgents?.map((s) => [s.id, s.instructions, s.default])).toEqual([['worker', 'worker.md', true]]);
     expect(template.seed).toEqual({
       persona: 'persona.md',
@@ -608,57 +626,48 @@ describe('app templates in this repo', () => {
       assistantName: 'Dough',
       connectApps: ['google-calendar', 'gmail', 'github', 'notion', 'linear'],
     });
+    // README.md sits in the directory but is documentation, never a template file.
+    expect(existsSync(join(EXAMPLE_ASSISTANT, 'README.md'))).toBe(true);
     expect(Object.keys(files).sort()).toEqual(['notes.md', 'persona.md', 'worker.md']);
   });
 
-  test('concierge agent.json points editors at the gateway template schema', () => {
-    const raw = JSON.parse(readFileSync(join(CONCIERGE, 'agent.json'), 'utf8')) as { $schema?: string };
+  test('agent.json points editors at the gateway template schema', () => {
+    const raw = JSON.parse(readFileSync(join(EXAMPLE_ASSISTANT, 'agent.json'), 'utf8')) as { $schema?: string };
     expect(raw.$schema).toBe(AGENT_TEMPLATE_SCHEMA_URL);
     expect(AGENT_TEMPLATE_SCHEMA_URL).toBe('https://api.try-dough.com/v1/agent-template/schema');
+    // $schema is an editor hint only: the loaded template never carries it.
+    expect('$schema' in loadTemplate(EXAMPLE_ASSISTANT).template).toBe(false);
   });
 
-  test('concierge files are verbatim: notes.md and worker.md keep no trailing newline', () => {
-    // The host appends notes.md after its host notes and uses worker.md as the
-    // worker prompt byte for byte; these reproduce Dough's prompts exactly.
-    const { files } = loadTemplate(CONCIERGE);
+  test('files are verbatim: notes.md and worker.md keep no trailing newline', () => {
+    const { files } = loadTemplate(EXAMPLE_ASSISTANT);
+    for (const name of ['notes.md', 'persona.md', 'worker.md']) {
+      expect(files[name]).toBe(readFileSync(join(EXAMPLE_ASSISTANT, name), 'utf8'));
+    }
     expect(files['notes.md']!.endsWith('\n')).toBe(false);
     expect(files['worker.md']!.endsWith('\n')).toBe(false);
     expect(files['persona.md']!.endsWith('\n')).toBe(true);
   });
 
-  test('concierge template + seed reassemble the former apps/concierge package exactly', () => {
-    // apps/concierge (main at c8619c5, the package CI published to the app)
-    // hashed to this digest with the gateway's agentPackageDigest. Rebuilding
-    // that package from the template proves the move kept every byte and field.
-    const { template, files } = loadTemplate(CONCIERGE);
-    const seed = template.seed!;
-    const agent = {
-      description: template.description,
-      assistantName: seed.assistantName,
-      model: template.model,
-      notes: seed.notes,
-      connectApps: seed.connectApps,
-      subAgents: template.subAgents,
-    };
-    const content = {
-      agent,
-      files: { 'notes.md': files['notes.md'], 'worker.md': files['worker.md'] },
-      persona: files['persona.md'],
-    };
-    const digest = `sha256:${createHash('sha256').update(canonicalJson(content), 'utf8').digest('hex')}`;
-    expect(digest).toBe('sha256:7b226e817eacd29f1576b319bf3dfbe550eb988783e7fb68aab3faad2ae5ee17');
+  test('the template digest is pinned', () => {
+    expect(templateDigest(loadTemplate(EXAMPLE_ASSISTANT))).toBe(EXAMPLE_ASSISTANT_DIGEST);
   });
 
-  test('concierge template digest is pinned (bump the version when this changes)', () => {
-    expect(templateDigest(loadTemplate(CONCIERGE))).toBe(CONCIERGE_TEMPLATE_DIGEST);
+  test('deprecated is not part of the digest; any content byte is', () => {
+    const loaded = loadTemplate(EXAMPLE_ASSISTANT);
+    const deprecated = { ...loaded, template: { ...loaded.template, deprecated: true } };
+    expect(templateDigest(deprecated)).toBe(EXAMPLE_ASSISTANT_DIGEST);
+    const edited = { ...loaded, files: { ...loaded.files, 'worker.md': `${loaded.files['worker.md']}\n` } };
+    expect(templateDigest(edited)).not.toBe(EXAMPLE_ASSISTANT_DIGEST);
   });
 });
 
 /**
- * concierge@1.0.0 as published. A change here means the template content
- * changed: the published 1.0.0 is immutable, so bump "version" too.
+ * The digest of test/fixtures/templates/example-assistant, computed with the
+ * gateway's agentTemplateDigest (see the live parity test). A change here means
+ * the CLI's digest or the fixture changed.
  */
-const CONCIERGE_TEMPLATE_DIGEST = 'sha256:3b5aeacab4bb43b621e8ff16672eec07e98a2f8611f90f58fec9f40bb64b3b0a';
+const EXAMPLE_ASSISTANT_DIGEST = 'sha256:02eaf911f5426a8dbfecd87636b0cebb7eb3fb105258e9e8c078957fc6965ec8';
 
 // ── Live cross-repo parity (best-effort; skipped when no gateway checkout) ───
 // DOUGH_GATEWAY_DIR overrides the sibling ../dough-gateway checkout.
@@ -713,11 +722,11 @@ describe.if(existsSync(GATEWAY_TEMPLATE))('live gateway parity', () => {
       normalizeAgentTemplateJson: (t: unknown) => unknown;
       agentTemplateDigest: (t: unknown, files: Record<string, string>) => string;
     };
-    const concierge = join(import.meta.dir, '..', 'agents', 'concierge');
-    const rawConcierge = JSON.parse(readFileSync(join(concierge, 'agent.json'), 'utf8')) as Record<string, unknown>;
+    const rawExample = JSON.parse(readFileSync(join(EXAMPLE_ASSISTANT, 'agent.json'), 'utf8')) as Record<string, unknown>;
+    const exampleFiles = loadTemplate(EXAMPLE_ASSISTANT).files;
     const cases: Array<{ raw: Record<string, unknown>; files: Record<string, string> }> = [
-      { raw: rawConcierge, files: loadTemplate(concierge).files },
-      { raw: { ...rawConcierge, deprecated: true }, files: loadTemplate(concierge).files },
+      { raw: rawExample, files: exampleFiles },
+      { raw: { ...rawExample, deprecated: true }, files: exampleFiles },
       { raw: MINIMAL, files: {} },
       { raw: FULL, files: FULL_FILES },
       // Stray whitespace: both sides trim description and seed.assistantName only.
@@ -738,7 +747,13 @@ describe.if(existsSync(GATEWAY_TEMPLATE))('live gateway parity', () => {
       const ours = templateDigest({ template: agentTemplateJsonSchema.parse(raw), files });
       expect(ours).toBe(gatewayDigest);
     }
-    expect(templateDigest(loadTemplate(concierge))).toBe(CONCIERGE_TEMPLATE_DIGEST);
+    // The pinned fixture digest is the gateway's own, deprecated or not.
+    for (const raw of [rawExample, { ...rawExample, deprecated: true }]) {
+      const parsed = gw.publishAgentTemplateBodySchema.safeParse({ template: raw, files: exampleFiles });
+      expect(gw.agentTemplateDigest(gw.normalizeAgentTemplateJson(parsed.data!.template), exampleFiles)).toBe(
+        EXAMPLE_ASSISTANT_DIGEST,
+      );
+    }
     // The padded case digests like the unpadded FULL template on both sides.
     const full = gw.publishAgentTemplateBodySchema.safeParse({ template: FULL, files: FULL_FILES });
     const padded = gw.publishAgentTemplateBodySchema.safeParse({ template: cases.at(-1)!.raw, files: FULL_FILES });

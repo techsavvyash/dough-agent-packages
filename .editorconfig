@@ -10,3 +10,7 @@ insert_final_newline = true
 # the prompt (and changes the published digest).
 [agents/**.md]
 insert_final_newline = false
+
+# The fixture templates the tests load must keep the same verbatim bytes.
+[test/fixtures/templates/**.md]
+insert_final_newline = false

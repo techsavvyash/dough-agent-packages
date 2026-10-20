@@ -1,9 +1,9 @@
 {
   "$schema": "https://api.try-dough.com/v1/agent-template/schema",
   "kind": "app",
-  "id": "concierge",
+  "id": "example-assistant",
   "version": "1.0.0",
-  "description": "Dough's always-on concierge: answers, acts on the user's connected services, hands longer work to agents, and helps new people get set up.",
+  "description": "An always-on assistant: answers, acts on the user's connected services, hands longer work to agents, and helps new people get set up.",
   "model": "gpt-6-luna",
   "tools": {
     "memory": true,

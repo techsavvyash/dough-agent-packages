@@ -7,13 +7,31 @@ it is:
 - **Registry agents** (`kind` absent or `"task"`): one-shot agents the platform
   runs in a fresh VM per task (PR review, coding, …), published to the hosted
   agent registry.
-- **App templates** (`kind: "app"`): the skeleton of an always-on agent app such
-  as Dough, the concierge — its sub-agents, their instructions, the tool
-  ceiling and the starter persona. See [App templates](#app-templates).
+- **App templates** (`kind: "app"`): the skeleton of an always-on agent app —
+  its sub-agents, their instructions, the tool ceiling and the starter persona.
+  See [App templates](#app-templates).
 
 This repo is the **authoring side** of both. Pushing to `main` publishes every
 package via CI — **no platform deploy required**. Bumping a prompt is a PR here,
 not an edit to the gateway. Every package is immutable per `id@version`.
+
+### Dashboard or repo?
+
+An always-on agent that is pure JSON and markdown — a persona, notes,
+sub-agents and their instructions, the tools it may use — is created and edited
+on the **dough dashboard**, not here. That includes team templates authored on
+the dashboard. Nothing about such an agent needs a commit, a review or CI.
+
+Use this repo (or your own, via the [reusable workflow](#publish-templates-from-your-own-repo))
+for:
+
+- **registry agents**: task agents published to the hosted registry;
+- **app templates you want versioned in git**: next to the code they come with
+  (a code skeleton, a service the agent drives), reviewed in pull requests and
+  published by CI.
+
+`agents/` currently holds registry agents only; the tests load a full app
+template from `test/fixtures/templates/example-assistant/`.
 
 The design lives in
 [`dough-gateway/docs/design/agent-packages.md`](../dough-gateway/docs/design/agent-packages.md).
@@ -25,8 +43,7 @@ agents/
   pr-reviewer/          agent.json, prompt.md, README.md        (registry agent)
   pr-reviewer-codex/    …
   coder/  coder-codex/  fixer-codex/  default/  …
-  concierge/            agent.json, persona.md, notes.md,       (app template: Dough)
-                        worker.md, README.md
+  <name>/               agent.json, persona.md, *.md, README.md (app template, kind "app")
 bin/
   publish.ts            the CLI: validate | pack | publish (dispatches on kind)
   check-sync.ts         drift check vs the live dough-gateway definitions
@@ -126,11 +143,14 @@ agents/<id>/            the directory name is the template id
   README.md             the catalog page; documentation only, never published
 ```
 
+An illustrative team template, `agents/release-desk/` in Acme's repo, kept in
+git next to the release tooling its sub-agents drive:
+
 ```jsonc
 {
   "$schema": "https://api.try-dough.com/v1/agent-template/schema",
   "kind": "app",
-  "id": "concierge",
+  "id": "@acme/release-desk",         // "@<team-slug>/<name>"; a bare id is a platform template
   "version": "1.0.0",                 // strict semver without +build, immutable once published
   "description": "…",                 // catalog summary, 1–500 chars
   "deprecated": false,                // optional; hides it from new deployments
@@ -138,18 +158,20 @@ agents/<id>/            the directory name is the template id
   "tools": {                          // the CEILING; every key defaults to true.
     "memory": true, "tasks": true,    // false = deployments can never enable it
     "agents": true, "events": true,
-    "connections": true, "webSearch": true
+    "connections": true, "webSearch": false
   },
   "approvals": true,                  // ceiling; default = tools.tasks
   "subAgents": [                      // owned by the template, read-only in deployments
     { "id": "worker", "name": "Worker", "description": "…",
-      "instructions": "worker.md", "default": true }
+      "instructions": "worker.md", "default": true },
+    { "id": "changelog", "name": "Changelog writer", "description": "…",
+      "instructions": "changelog.md" }
   ],
   "seed": {                           // copied into a NEW deployment only
     "persona": "persona.md",
     "notes": "notes.md",
-    "assistantName": "Dough",
-    "connectApps": ["gmail", "github"]
+    "assistantName": "Release Desk",
+    "connectApps": ["github", "linear"]
   }
 }
 ```
@@ -186,7 +208,7 @@ own `agentTemplateDigest` when a gateway checkout is present
 
 | id | who publishes | token |
 |----|---------------|-------|
-| `concierge` (bare) | dough operators, from this repo | `AGENT_REGISTRY_PUBLISH_TOKEN` |
+| `<name>` (bare) | dough operators, from this repo | `AGENT_REGISTRY_PUBLISH_TOKEN` |
 | `@<team-slug>/<name>` | that team, from any repo | `DOUGH_TEMPLATE_TOKEN` (a `tpt_…` token) |
 
 A team template's directory is named after `<name>`, e.g. `agents/support-bot/`
