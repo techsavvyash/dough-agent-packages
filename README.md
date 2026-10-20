@@ -34,8 +34,9 @@ bin/
   pack.ts               deterministic tar.gz bundling (node runtime)
   registry.ts           registry HTTP client + idempotency
   resolve.ts            promptFile/readmeFile inlining
-  agent-template.ts     app templates: schema, file rules, digest, publish client
-.github/workflows/publish.yml   tests + validation on PRs; publishes on main
+  agent-template.ts     app templates: schema, namespaces, tokens, digest, publish client
+.github/workflows/publish.yml            this repo: tests + validation on PRs; publishes on main
+.github/workflows/publish-templates.yml  reusable: any repo validates/publishes its templates
 ```
 
 ## The registry package format
@@ -178,3 +179,71 @@ CLI verifies the server's `template.digest` equals the local one, and
 `validate` prints it. A best-effort test checks parity against the gateway's
 own `agentTemplateDigest` when a gateway checkout is present
 (`../dough-gateway`, or `DOUGH_GATEWAY_DIR`).
+
+### Namespaces and tokens
+
+| id | who publishes | token |
+|----|---------------|-------|
+| `concierge` (bare) | dough operators, from this repo | `AGENT_REGISTRY_PUBLISH_TOKEN` |
+| `@<team-slug>/<name>` | that team, from any repo | `DOUGH_TEMPLATE_TOKEN` (a `tpt_…` token) |
+
+A team template's directory is named after `<name>`, e.g. `agents/support-bot/`
+for `@acme/support-bot`. A team admin mints template publish tokens on the
+team's **Templates** page in the dashboard. A team token publishes only into
+its own team's namespace, and the operator token never publishes into a team's
+namespace. The CLI picks the token per template and stops with the name of the
+variable to set when the needed one is missing or holds the wrong kind of
+token. Team templates are visible to the team's members only; platform
+templates are visible to everyone.
+
+## Publish templates from your own repo
+
+Any repo can hold templates for its team. Put each one in its own directory
+(by default under `agents/`), add a token, and call the reusable workflow:
+
+1. On the dashboard, open your team's **Templates** page and mint a template
+   publish token. Save it as the `DOUGH_TEMPLATE_TOKEN` Actions secret of the repo.
+2. Add `.github/workflows/dough-templates.yml`:
+
+```yaml
+on: { push: { branches: [main] }, pull_request: {} }
+jobs:
+  templates:
+    uses: techsavvyash/dough-agent-packages/.github/workflows/publish-templates.yml@main
+    secrets: { DOUGH_TEMPLATE_TOKEN: "${{ secrets.DOUGH_TEMPLATE_TOKEN }}" }
+```
+
+Pull requests validate every template offline (no token needed). A push to the
+default branch publishes them: a new `version` is created, an unchanged one is
+skipped, and changed content under an existing version fails (bump the
+version). Pin `@main` to a tag or commit SHA to pin the publish tool too; the
+workflow runs this repo's CLI at exactly the commit you reference. Optional
+inputs (under `with:`): `path`, a glob of template directories (default
+`agents/*`), and `gateway-url` (default `https://api.try-dough.com`).
+
+A minimal template, `agents/support-bot/`:
+
+```
+agents/support-bot/
+  agent.json
+  persona.md
+```
+
+```json
+{
+  "$schema": "https://api.try-dough.com/v1/agent-template/schema",
+  "kind": "app",
+  "id": "@acme/support-bot",
+  "version": "1.0.0",
+  "description": "Answers support questions for Acme customers.",
+  "seed": { "persona": "persona.md", "assistantName": "Acme Support" }
+}
+```
+
+`persona.md` holds the starting system prompt. Add sub-agents, a tool ceiling
+and notes as described in [App templates](#app-templates). Check a template
+locally with
+`bun <path-to-this-repo>/bin/publish.ts validate agents/support-bot`.
+Deployments of a team template are created on an app's **Agent** tab. A team
+app can pin platform templates or its own team's; a personal app can pin
+platform templates or those of any team its owner belongs to.

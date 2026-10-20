@@ -65,6 +65,114 @@ const MANIFEST_FILE = 'agent.json';
 /** Present in a template directory for humans; never part of the template. */
 const DOC_FILES = new Set(['README.md']);
 
+// ── Namespaces ────────────────────────────────────────────────────────
+//
+// Platform templates have bare ids (`concierge`) and are published with the
+// operator token. Team templates are `@<team-slug>/<name>` and are published
+// with a team template publish token (`tpt_…`) scoped to that team; neither
+// token can publish into the other's namespace.
+
+/** A team's slug, as the gateway validates it (dough-gateway src/domain/team.ts). */
+export const TEAM_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$/;
+
+export const TemplateNamespace = {
+  Platform: 'platform',
+  Team: 'team',
+} as const;
+export type TemplateNamespace = (typeof TemplateNamespace)[keyof typeof TemplateNamespace];
+
+/** A parsed template id. */
+export type TemplateRef =
+  | { namespace: typeof TemplateNamespace.Platform; name: string }
+  | { namespace: typeof TemplateNamespace.Team; scope: string; name: string };
+
+const TEMPLATE_ID_MESSAGE =
+  'must be a template name (lowercase letters, digits and "-") or "@<team-slug>/<name>"';
+
+/** Parses `name` or `@scope/name`; undefined when it is neither. */
+export function parseTemplateId(id: string): TemplateRef | undefined {
+  if (!id.startsWith('@')) {
+    return SLUG_PATTERN.test(id) ? { namespace: TemplateNamespace.Platform, name: id } : undefined;
+  }
+  const slash = id.indexOf('/');
+  if (slash < 0) return undefined;
+  const scope = id.slice(1, slash);
+  const name = id.slice(slash + 1);
+  if (!TEAM_SLUG_PATTERN.test(scope) || !SLUG_PATTERN.test(name)) return undefined;
+  return { namespace: TemplateNamespace.Team, scope, name };
+}
+
+/** Like {@link parseTemplateId}, for ids already validated by the schema. */
+export function templateRef(id: string): TemplateRef {
+  const ref = parseTemplateId(id);
+  if (ref === undefined) throw new Error(`template id "${id}" ${TEMPLATE_ID_MESSAGE}`);
+  return ref;
+}
+
+/**
+ * `<gateway>/v1/agent-templates/<name>/<version>` (platform) or
+ * `<gateway>/v1/agent-templates/@<scope>/<name>/<version>` (team): the `@` and
+ * the `/` between scope and name are path structure, every segment is encoded.
+ */
+export function templateVersionUrl(gatewayUrl: string, id: string, version: string): string {
+  const ref = templateRef(id);
+  const base = `${gatewayUrl.replace(/\/+$/, '')}/v1/agent-templates`;
+  const path =
+    ref.namespace === TemplateNamespace.Team
+      ? `@${encodeURIComponent(ref.scope)}/${encodeURIComponent(ref.name)}`
+      : encodeURIComponent(ref.name);
+  return `${base}/${path}/${encodeURIComponent(version)}`;
+}
+
+/** The operator token for platform templates, a team token for `@scope/` ones. */
+export const TEMPLATE_TOKEN_ENV = 'DOUGH_TEMPLATE_TOKEN';
+export const OPERATOR_TOKEN_ENV = 'AGENT_REGISTRY_PUBLISH_TOKEN';
+/** Team template publish tokens, minted by a team admin in the dashboard. */
+export const TEAM_TOKEN_PREFIX = 'tpt_';
+
+export class TemplateTokenError extends Error {
+  override readonly name = 'TemplateTokenError';
+}
+
+/**
+ * The token that may publish `id`: {@link TEMPLATE_TOKEN_ENV} for a team
+ * template, {@link OPERATOR_TOKEN_ENV} for a platform one. A missing token, or
+ * a team token where the operator token belongs (and vice versa), is an error
+ * naming the variable to set — the gateway would refuse it anyway.
+ */
+export function selectTemplateToken(
+  id: string,
+  env: { templateToken?: string | undefined; publishToken?: string | undefined },
+): string {
+  const ref = templateRef(id);
+  const templateToken = env.templateToken?.trim() || undefined;
+  const publishToken = env.publishToken?.trim() || undefined;
+  if (ref.namespace === TemplateNamespace.Team) {
+    if (templateToken === undefined) {
+      throw new TemplateTokenError(
+        `${id} is a team template: set ${TEMPLATE_TOKEN_ENV} to a template publish token (${TEAM_TOKEN_PREFIX}…) of team "${ref.scope}", minted by a team admin on the team's Templates page`,
+      );
+    }
+    if (!templateToken.startsWith(TEAM_TOKEN_PREFIX)) {
+      throw new TemplateTokenError(
+        `${TEMPLATE_TOKEN_ENV} is not a template publish token (expected ${TEAM_TOKEN_PREFIX}…)`,
+      );
+    }
+    return templateToken;
+  }
+  if (publishToken === undefined) {
+    throw new TemplateTokenError(
+      `${id} is a platform template: set ${OPERATOR_TOKEN_ENV} (the operator token; only the dough operators publish bare ids — team templates are "@<team-slug>/${ref.name}")`,
+    );
+  }
+  if (publishToken.startsWith(TEAM_TOKEN_PREFIX)) {
+    throw new TemplateTokenError(
+      `${OPERATOR_TOKEN_ENV} holds a team template token (${TEAM_TOKEN_PREFIX}…), which can never publish platform template ${id}`,
+    );
+  }
+  return publishToken;
+}
+
 const fileRef = z
   .string()
   .regex(FILE_NAME_PATTERN, 'must be a file name like "notes.md" (lowercase, ending in .md)');
@@ -148,7 +256,8 @@ const templateObjectSchema = z
   .object({
     $schema: z.string().url().optional(),
     kind: z.literal(PackageKind.App),
-    id: slug,
+    /** `name` (platform) or `@<team-slug>/<name>` (team). */
+    id: z.string().refine((id) => parseTemplateId(id) !== undefined, TEMPLATE_ID_MESSAGE),
     version: z
       .string()
       .regex(TEMPLATE_VERSION_PATTERN, 'version must be strict semver without build metadata (e.g. 1.4.0 or 1.4.0-rc.1)'),
@@ -274,8 +383,9 @@ export function loadTemplate(dir: string): AgentTemplateBody {
 
   const issues: string[] = [];
   const dirName = basename(dir.replace(/\/+$/, ''));
-  if (dirName !== template.id) {
-    issues.push(`directory name "${dirName}" must equal the template id "${template.id}"`);
+  const { name } = templateRef(template.id);
+  if (dirName !== name) {
+    issues.push(`directory name "${dirName}" must equal the template name "${name}" (of id "${template.id}")`);
   }
 
   const files: Record<string, string> = {};
@@ -360,11 +470,14 @@ export async function publishTemplate(opts: {
   gatewayUrl: string;
   token: string;
   body: AgentTemplateBody;
+  /** The template's directory, named in errors; default `agents/<name>`. */
+  dir?: string;
   fetchImpl?: typeof fetch;
 }): Promise<TemplatePublishOutcome> {
   const { id, version } = opts.body.template;
   const ref = `${id}@${version}`;
-  const url = `${opts.gatewayUrl.replace(/\/+$/, '')}/v1/agent-templates/${encodeURIComponent(id)}/${encodeURIComponent(version)}`;
+  const url = templateVersionUrl(opts.gatewayUrl, id, version);
+  const dir = (opts.dir ?? `agents/${templateRef(id).name}`).replace(/\/+$/, '');
   let res: Response;
   try {
     res = await (opts.fetchImpl ?? fetch)(url, {
@@ -386,7 +499,7 @@ export async function publishTemplate(opts: {
   if (res.status === 409) {
     throw new TemplatePublishError(
       `template ${ref} is already published with different content (local ${expected})` +
-        ` — templates are immutable: bump "version" in agents/${id}/agent.json`,
+        ` — templates are immutable: bump "version" in ${dir}/agent.json`,
       409,
     );
   }

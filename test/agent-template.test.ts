@@ -123,7 +123,7 @@ describe('loadTemplate', () => {
 
   test('the directory name must be the template id', () => {
     const issues = issuesOf(() => loadTemplate(templateDir('other', { 'agent.json': JSON.stringify(MINIMAL) })));
-    expect(issues).toEqual(['directory name "other" must equal the template id "mini"']);
+    expect(issues).toEqual(['directory name "other" must equal the template name "mini" (of id "mini")']);
   });
 
   test('missing or invalid agent.json', () => {
@@ -193,8 +193,9 @@ describe('agent.json schema', () => {
   test('identity: kind "app", slug id, strict semver, non-empty description', () => {
     expect(schemaIssues({ ...MINIMAL, kind: 'task' })[0]).toStartWith('kind: ');
     expect(schemaIssues({ ...MINIMAL, id: 'Bad_Id' })).toEqual([
-      'id: must be lowercase letters, digits and "-"',
+      'id: must be a template name (lowercase letters, digits and "-") or "@<team-slug>/<name>"',
     ]);
+    expect(schemaIssues({ ...MINIMAL, id: '@acme/support-bot' })).toEqual([]);
     const semver = 'version: version must be strict semver without build metadata (e.g. 1.4.0 or 1.4.0-rc.1)';
     expect(schemaIssues({ ...MINIMAL, version: '1.0' })).toEqual([semver]);
     expect(schemaIssues({ ...MINIMAL, version: '1.0.0+build.1' })).toEqual([semver]);

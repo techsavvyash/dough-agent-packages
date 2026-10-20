@@ -1,0 +1,87 @@
+name: publish-templates
+
+# Reusable workflow: publish dough app templates from ANY repo. A caller adds
+#
+#   jobs:
+#     templates:
+#       uses: techsavvyash/dough-agent-packages/.github/workflows/publish-templates.yml@main
+#       secrets: { DOUGH_TEMPLATE_TOKEN: "${{ secrets.DOUGH_TEMPLATE_TOKEN }}" }
+#
+# to a workflow that runs on pull_request and push. Pull requests validate the
+# templates offline; pushes to the caller's default branch publish them
+# (immutable per id@version: identical content is skipped, changed content
+# without a version bump fails). The CLI is this repository at exactly the
+# commit the caller's `uses: …@<ref>` resolved to, so pinning a tag or SHA
+# pins the publish tool too.
+
+on:
+  workflow_call:
+    inputs:
+      path:
+        description: 'Template directories to validate and publish (a shell glob, relative to the caller repo root)'
+        type: string
+        default: 'agents/*'
+      gateway-url:
+        description: 'dough gateway base URL'
+        type: string
+        default: 'https://api.try-dough.com'
+    secrets:
+      DOUGH_TEMPLATE_TOKEN:
+        description: 'Template publish token (tpt_…) of the team that owns the "@<team-slug>/…" templates; needed to publish, not to validate'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  templates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the templates
+        uses: actions/checkout@v4
+        with:
+          path: src
+
+      - name: Check out the publish CLI
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: cli
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.4'
+
+      - name: Install the CLI
+        working-directory: cli
+        run: bun install --frozen-lockfile --production
+
+      - name: Validate
+        working-directory: src
+        env:
+          TEMPLATE_GLOB: ${{ inputs.path }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          # Unquoted on purpose: the input is a glob. The trailing / keeps
+          # directories only; it is stripped again below.
+          dirs=( $TEMPLATE_GLOB/ )
+          if [ ${#dirs[@]} -eq 0 ]; then
+            echo "no template directories match '$TEMPLATE_GLOB'" >&2
+            exit 1
+          fi
+          bun ../cli/bin/publish.ts validate "${dirs[@]%/}"
+
+      - name: Publish
+        if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        working-directory: src
+        env:
+          TEMPLATE_GLOB: ${{ inputs.path }}
+          DOUGH_GATEWAY_URL: ${{ inputs.gateway-url }}
+          DOUGH_TEMPLATE_TOKEN: ${{ secrets.DOUGH_TEMPLATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dirs=( $TEMPLATE_GLOB/ )
+          bun ../cli/bin/publish.ts publish "${dirs[@]%/}"
