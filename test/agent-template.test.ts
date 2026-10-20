@@ -546,6 +546,25 @@ describe('publishTemplate', () => {
     ).rejects.toThrow('response carries no template.digest');
   });
 
+  test('deprecated is sent only when agent.json has it, verbatim (absent leaves the stored flag alone)', async () => {
+    for (const [extra, expected] of [
+      [{}, 'absent'],
+      [{ deprecated: false }, false],
+      [{ deprecated: true }, true],
+    ] as const) {
+      const seen: Request[] = [];
+      const loaded = loadTemplate(templateDir('mini', { 'agent.json': JSON.stringify({ ...MINIMAL, ...extra }) }));
+      await publishTemplate({
+        gatewayUrl: 'https://gw.test',
+        token: 'tok',
+        body: loaded,
+        fetchImpl: fakeFetch(201, ok('created', templateDigest(loaded)), seen),
+      });
+      const sent = (await seen[0]!.json()) as { template: Record<string, unknown> };
+      expect('deprecated' in sent.template ? sent.template.deprecated : 'absent').toBe(expected);
+    }
+  });
+
   test('a transport failure is a TemplatePublishError', async () => {
     const failing = (async () => {
       throw new Error('ECONNREFUSED');
