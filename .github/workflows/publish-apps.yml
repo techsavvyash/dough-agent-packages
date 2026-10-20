@@ -1,0 +1,64 @@
+name: publish-apps
+
+# Publish app agent packages (apps/<name>/) to their dough apps. Only apps
+# whose directory changed in the push are published, so a version someone
+# published from the dashboard is not reverted by an unrelated commit. A
+# manual run publishes the named app (or every app with "all").
+#
+# Secrets: DOUGH_GATEWAY_URL, DOUGH_DEPLOY_TOKENS = {"<app>": "dpt_…"} (one
+# deploy token per app, created on the app's Agent tab in the dashboard).
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps/**']
+  pull_request:
+    paths: ['apps/**', 'bin/app-package.ts', 'bin/publish-app.ts']
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 'App to publish (directory name under apps/), or "all"'
+        required: true
+
+jobs:
+  validate-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.4'
+
+      - run: bun install --frozen-lockfile
+
+      - name: Validate every app package
+        run: bun bin/publish-app.ts validate apps/*
+
+      - name: Select apps to publish
+        id: select
+        if: github.event_name != 'pull_request'
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          INPUT_APP: ${{ github.event.inputs.app }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$INPUT_APP" = "all" ]; then dirs=$(ls -d apps/*/ | sed 's#/$##'); else dirs="apps/$INPUT_APP"; fi
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            dirs=$(ls -d apps/*/ | sed 's#/$##')
+          else
+            dirs=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- apps/ | cut -d/ -f1-2 | sort -u | while read -r d; do [ -d "$d" ] && echo "$d"; done)
+          fi
+          echo "dirs=$(echo $dirs)" >> "$GITHUB_OUTPUT"
+          echo "publishing: ${dirs:-(nothing)}"
+
+      - name: Publish
+        if: github.event_name != 'pull_request' && steps.select.outputs.dirs != ''
+        env:
+          DOUGH_GATEWAY_URL: ${{ secrets.DOUGH_GATEWAY_URL }}
+          DOUGH_DEPLOY_TOKENS: ${{ secrets.DOUGH_DEPLOY_TOKENS }}
+        run: bun bin/publish-app.ts publish ${{ steps.select.outputs.dirs }}

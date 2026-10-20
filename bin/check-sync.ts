@@ -51,7 +51,6 @@ const DEFINITION_EXPORTS: Record<string, string> = {
   coder: 'CODER_AGENT',
   'coder-codex': 'CODER_CODEX_AGENT',
   'fixer-codex': 'FIXER_CODEX_AGENT',
-  concierge: 'CONCIERGE_AGENT',
   default: 'DEFAULT_AGENT',
 };
 

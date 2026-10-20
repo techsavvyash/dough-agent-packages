@@ -20,7 +20,6 @@ const BUILTINS = [
   'coder',
   'coder-codex',
   'fixer-codex',
-  'concierge',
   'default',
 ] as const;
 
