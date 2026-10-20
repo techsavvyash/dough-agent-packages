@@ -67,7 +67,7 @@ const DOC_FILES = new Set(['README.md']);
 
 // ── Namespaces ────────────────────────────────────────────────────────
 //
-// Platform templates have bare ids (`concierge`) and are published with the
+// Platform templates have bare ids (`assistant`) and are published with the
 // operator token. Team templates are `@<team-slug>/<name>` and are published
 // with a team template publish token (`tpt_…`) scoped to that team; neither
 // token can publish into the other's namespace.
