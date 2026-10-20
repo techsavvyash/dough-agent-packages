@@ -49,6 +49,17 @@ export function resolveManifest(pkg: LoadedPackage): AgentManifest {
   const { dir, raw } = pkg;
   const merged: Record<string, unknown> = { ...raw };
 
+  // `kind` tells registry agents ("task", the default) from app templates
+  // (bin/agent-template.ts); it is not part of the registry wire object.
+  if (raw.kind !== undefined) {
+    if (raw.kind !== 'task') {
+      throw new PackageIoError(
+        `${dir}/agent.json has kind ${JSON.stringify(raw.kind)} — only "task" (or no kind) is a registry agent`,
+      );
+    }
+    delete merged.kind;
+  }
+
   const promptFile = raw.promptFile;
   if (promptFile !== undefined) {
     if (typeof promptFile !== 'string') {

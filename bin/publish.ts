@@ -7,8 +7,26 @@
 //
 // See docs/design/agent-packages.md §2. Every subcommand takes one or more
 // package directories; `agents/*` glob-expands in the shell.
+//
+// agents/ holds two kinds, told apart by agent.json `kind`:
+//   - registry agents (`kind` absent or "task"): one-shot task agents,
+//     published to PUT /v1/agents/:id/:version (bin/registry.ts);
+//   - app templates (`kind: "app"`): skeletons of always-on agent apps,
+//     published to PUT /v1/agent-templates/:id/:version (bin/agent-template.ts).
+// Both are immutable per id@version and use the same operator publish token.
 
-import { AgentRuntime } from './manifest.ts';
+import {
+  type AgentTemplateBody,
+  AgentTemplateError,
+  PackageKind,
+  TemplatePublishError,
+  TemplatePublishOutcomeKind,
+  loadTemplate,
+  packageKind,
+  publishTemplate,
+  templateDigest,
+} from './agent-template.ts';
+import { type AgentManifest, AgentRuntime } from './manifest.ts';
 import { packDir } from './pack.ts';
 import { ImmutabilityError, RegistryClient, RegistryError } from './registry.ts';
 import { PackageIoError, loadPackage, resolveManifest } from './resolve.ts';
@@ -31,6 +49,23 @@ function describe(id: string, version: string, runtime: string): string {
   return `${id}@${version} (${runtime})`;
 }
 
+/** A package directory, loaded and validated according to its kind. */
+type LoadedAny =
+  | { kind: typeof PackageKind.Task; def: AgentManifest }
+  | { kind: typeof PackageKind.App; body: AgentTemplateBody };
+
+function loadAny(dir: string): LoadedAny {
+  const pkg = loadPackage(dir);
+  if (packageKind(pkg.raw) === PackageKind.App) {
+    return { kind: PackageKind.App, body: loadTemplate(dir) };
+  }
+  return { kind: PackageKind.Task, def: resolveManifest(pkg) };
+}
+
+function describeTemplate(body: AgentTemplateBody): string {
+  return `${body.template.id}@${body.template.version} (app template)`;
+}
+
 // ── validate ────────────────────────────────────────────────────────────────
 
 async function cmdValidate(dirs: string[]): Promise<number> {
@@ -41,8 +76,13 @@ async function cmdValidate(dirs: string[]): Promise<number> {
   let failures = 0;
   for (const dir of dirs) {
     try {
-      const def = resolveManifest(loadPackage(dir));
-      console.log(`OK  ${describe(def.id, def.version, def.runtime)}  [${dir}]`);
+      const loaded = loadAny(dir);
+      if (loaded.kind === PackageKind.App) {
+        console.log(`OK  ${describeTemplate(loaded.body)}  digest=${templateDigest(loaded.body)}  [${dir}]`);
+      } else {
+        const { def } = loaded;
+        console.log(`OK  ${describe(def.id, def.version, def.runtime)}  [${dir}]`);
+      }
     } catch (err) {
       failures++;
       reportPackageError(dir, err);
@@ -66,7 +106,12 @@ async function cmdPack(dirs: string[]): Promise<number> {
   let failures = 0;
   for (const dir of dirs) {
     try {
-      const def = resolveManifest(loadPackage(dir));
+      const loaded = loadAny(dir);
+      if (loaded.kind === PackageKind.App) {
+        console.error(`SKIP ${describeTemplate(loaded.body)}: app templates ship no bundle`);
+        continue;
+      }
+      const { def } = loaded;
       if (def.runtime !== AgentRuntime.Node) {
         console.error(
           `SKIP ${describe(def.id, def.version, def.runtime)}: only 'node' runtime agents ship a bundle`,
@@ -88,7 +133,7 @@ async function cmdPack(dirs: string[]): Promise<number> {
 
 // ── publish ─────────────────────────────────────────────────────────────────
 
-async function cmdPublish(dirs: string[], env: CliEnv): Promise<number> {
+async function cmdPublish(dirs: string[], env: CliEnv, fetchImpl?: typeof fetch): Promise<number> {
   if (dirs.length === 0) {
     console.error('publish: no package directories given');
     return 2;
@@ -105,20 +150,48 @@ async function cmdPublish(dirs: string[], env: CliEnv): Promise<number> {
   const client = new RegistryClient({
     baseUrl: env.gatewayUrl,
     token: env.publishToken,
+    ...(fetchImpl ? { fetchImpl } : {}),
   });
 
   let failures = 0;
   let published = 0;
   let skipped = 0;
   for (const dir of dirs) {
-    let def;
+    let loaded: LoadedAny;
     try {
-      def = resolveManifest(loadPackage(dir));
+      loaded = loadAny(dir);
     } catch (err) {
       failures++;
       reportPackageError(dir, err);
       continue;
     }
+    if (loaded.kind === PackageKind.App) {
+      const { body } = loaded;
+      try {
+        const outcome = await publishTemplate({
+          gatewayUrl: env.gatewayUrl,
+          token: env.publishToken,
+          body,
+          ...(fetchImpl ? { fetchImpl } : {}),
+        });
+        if (outcome.outcome === TemplatePublishOutcomeKind.Created) {
+          published++;
+          console.log(`PUBLISHED ${describeTemplate(body)}  digest=${outcome.digest}`);
+        } else if (outcome.outcome === TemplatePublishOutcomeKind.DeprecationUpdated) {
+          published++;
+          const state = body.template.deprecated === true ? 'deprecated' : 'undeprecated';
+          console.log(`UPDATED   ${describeTemplate(body)}  (${state}; content unchanged)`);
+        } else {
+          skipped++;
+          console.log(`SKIP      ${describeTemplate(body)}  (identical already published)`);
+        }
+      } catch (err) {
+        failures++;
+        reportPackageError(dir, err);
+      }
+      continue;
+    }
+    const { def } = loaded;
     try {
       // Pass the package dir so a node-runtime publish can pack + upload its
       // bundle before the manifest PUT (design §2 step 3); non-node runtimes
@@ -156,9 +229,13 @@ function reportPackageError(dir: string, err: unknown): void {
     err instanceof ManifestValidationError ||
     err instanceof PackageIoError ||
     err instanceof ImmutabilityError ||
-    err instanceof RegistryError
+    err instanceof RegistryError ||
+    err instanceof TemplatePublishError
   ) {
     console.error(`ERR ${dir}: ${err.message}`);
+  } else if (err instanceof AgentTemplateError) {
+    console.error(`ERR ${dir}: invalid app template:`);
+    for (const issue of err.issues) console.error(`  - ${issue}`);
   } else if (err instanceof Error) {
     console.error(`ERR ${dir}: ${err.name}: ${err.message}`);
   } else {
@@ -199,6 +276,9 @@ function printUsage(): void {
       '  bun bin/publish.ts validate <dir>...   validate agent.json manifests locally',
       '  bun bin/publish.ts pack <dir>...       deterministically pack a node-runtime bundle',
       '  bun bin/publish.ts publish <dir>...    resolve, validate, and PUT to the registry',
+      '',
+      'agent.json "kind": absent or "task" = registry agent, "app" = app template',
+      '(PUT /v1/agent-templates/:id/:version).',
       '',
       'env (publish):',
       '  DOUGH_GATEWAY_URL              registry base URL',

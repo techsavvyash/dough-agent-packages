@@ -4,7 +4,9 @@ root = true
 charset = utf-8
 insert_final_newline = true
 
-# App package prompt files are used verbatim by the agent host: a final
-# newline an editor adds becomes part of the prompt.
-[apps/**.md]
+# Package markdown is used verbatim: registry prompts are the agent's system
+# prompt byte for byte, and app templates' instruction, persona and notes files
+# are what the agent host runs. A final newline an editor adds becomes part of
+# the prompt (and changes the published digest).
+[agents/**.md]
 insert_final_newline = false

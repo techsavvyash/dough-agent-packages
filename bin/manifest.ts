@@ -177,16 +177,15 @@ export type Toolchains = z.infer<typeof toolchainsSchema>;
 // and does NOT carry `systemPrompt`/`readme` inline (those are the resolved
 // output). The per-runtime superRefine below enforces the design's shape table.
 
+/** Strict semver — registry agents and app templates are versioned alike. */
+export const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
+export const SEMVER_MESSAGE = 'version must be strict semver (e.g. 1.4.0 or 1.4.0-rc.1)';
+
 export const agentManifestSchema = z
   .object({
     id: z.string().min(1),
     /** Strict semver — the registry resolves `latest` by max semver (design §3). */
-    version: z
-      .string()
-      .regex(
-        /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/,
-        'version must be strict semver (e.g. 1.4.0 or 1.4.0-rc.1)',
-      ),
+    version: z.string().regex(SEMVER_PATTERN, SEMVER_MESSAGE),
     description: z.string().min(1),
 
     runtime: agentRuntimeSchema.default(AgentRuntime.Claude),
