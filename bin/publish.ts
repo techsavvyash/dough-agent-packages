@@ -20,6 +20,7 @@ import {
   AgentTemplateError,
   PackageKind,
   TemplatePublishError,
+  TemplatePublishOutcomeKind,
   loadTemplate,
   packageKind,
   publishTemplate,
@@ -173,9 +174,13 @@ async function cmdPublish(dirs: string[], env: CliEnv, fetchImpl?: typeof fetch)
           body,
           ...(fetchImpl ? { fetchImpl } : {}),
         });
-        if (outcome.status === 'published') {
+        if (outcome.outcome === TemplatePublishOutcomeKind.Created) {
           published++;
           console.log(`PUBLISHED ${describeTemplate(body)}  digest=${outcome.digest}`);
+        } else if (outcome.outcome === TemplatePublishOutcomeKind.DeprecationUpdated) {
+          published++;
+          const state = body.template.deprecated === true ? 'deprecated' : 'undeprecated';
+          console.log(`UPDATED   ${describeTemplate(body)}  (${state}; content unchanged)`);
         } else {
           skipped++;
           console.log(`SKIP      ${describeTemplate(body)}  (identical already published)`);

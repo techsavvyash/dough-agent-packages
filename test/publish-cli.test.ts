@@ -56,7 +56,8 @@ function gateway(templateStatus: number, templatePayload?: unknown): { fetchImpl
     if (path.startsWith('/v1/agents/') && req.method === 'PUT') return json({}, 201);
     if (path.startsWith('/v1/agent-templates/')) {
       const b = body as Parameters<typeof templateDigest>[0];
-      return json(templatePayload ?? { digest: templateDigest(b) }, templateStatus);
+      const outcome = templateStatus === 201 ? 'created' : 'unchanged';
+      return json(templatePayload ?? { outcome, template: { digest: templateDigest(b) } }, templateStatus);
     }
     return json({ message: 'unexpected' }, 500);
   }) as typeof fetch;
@@ -91,6 +92,14 @@ describe('publish dispatch on kind', () => {
     expect(await cmdPublish([CONCIERGE], ENV, fetchImpl)).toBe(0);
     expect(logs.join('\n')).toContain('SKIP      concierge@1.0.0 (app template)  (identical already published)');
     expect(logs.at(-1)).toContain('published 0, skipped 1, failed 0');
+  });
+
+  test('a deprecation-only update (200 deprecation-updated) counts as published', async () => {
+    const digest = templateDigest(loadTemplate(CONCIERGE));
+    const { fetchImpl } = gateway(200, { outcome: 'deprecation-updated', template: { digest } });
+    expect(await cmdPublish([CONCIERGE], ENV, fetchImpl)).toBe(0);
+    expect(logs.join('\n')).toContain('UPDATED   concierge@1.0.0 (app template)  (undeprecated; content unchanged)');
+    expect(logs.at(-1)).toContain('published 1, skipped 0, failed 0');
   });
 
   test('a conflicting template (409) fails the run with a bump-the-version error', async () => {

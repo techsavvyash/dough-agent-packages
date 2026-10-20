@@ -27,7 +27,6 @@ import { basename, join } from 'node:path';
 import { z } from 'zod';
 
 import { canonicalJson } from './digest.ts';
-import { SEMVER_MESSAGE, SEMVER_PATTERN } from './manifest.ts';
 
 /** The `kind` of an app template; registry agents have no kind or `"task"`. */
 export const PackageKind = {
@@ -53,6 +52,15 @@ export const MAX_CONNECT_APPS = 20;
  * a sub-agent may only take this id by replacing it (`default: true`).
  */
 export const BUILT_IN_WORKER_ID = 'worker';
+/** The editor hint for a template's agent.json (served publicly by the gateway). */
+export const AGENT_TEMPLATE_SCHEMA_URL = 'https://api.try-dough.com/v1/agent-template/schema';
+/**
+ * Strict semver WITHOUT build metadata: `1.0.0+a` and `1.0.0+b` would be
+ * different versions with the same precedence, so the gateway refuses `+`.
+ */
+export const TEMPLATE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?$/;
+/** The only file name reserved to one reference: the seed persona's. */
+export const PERSONA_FILE = 'persona.md';
 const MANIFEST_FILE = 'agent.json';
 /** Present in a template directory for humans; never part of the template. */
 const DOC_FILES = new Set(['README.md']);
@@ -141,8 +149,12 @@ const templateObjectSchema = z
     $schema: z.string().url().optional(),
     kind: z.literal(PackageKind.App),
     id: slug,
-    version: z.string().regex(SEMVER_PATTERN, SEMVER_MESSAGE),
+    version: z
+      .string()
+      .regex(TEMPLATE_VERSION_PATTERN, 'version must be strict semver without build metadata (e.g. 1.4.0 or 1.4.0-rc.1)'),
     description: z.string().min(1).max(DESCRIPTION_MAX_CHARS),
+    /** Mutable metadata: hides the version from new deployments; not part of the digest. */
+    deprecated: z.boolean().optional(),
     /** The default model of new deployments. */
     model: z.string().regex(MODEL_PATTERN, 'must be a model id').optional(),
     tools: toolsSchema.optional(),
@@ -157,7 +169,7 @@ const templateObjectSchema = z
 export const agentTemplateJsonSchema = templateObjectSchema.superRefine(refineTemplate);
 
 export type AgentTemplateJson = z.infer<typeof agentTemplateJsonSchema>;
-/** agent.json as published, stored and digested: `$schema` dropped. */
+/** agent.json as published and stored: `$schema` dropped (the digest also drops `deprecated`). */
 export type AgentTemplate = Omit<AgentTemplateJson, '$schema'>;
 
 /** What `PUT /v1/agent-templates/:id/:version` takes. */
@@ -216,6 +228,9 @@ export function validateTemplateFiles(body: AgentTemplateBody): string[] {
 
   const refs = templateFileReferences(body.template);
   for (const ref of refs) {
+    if (ref.file === PERSONA_FILE && ref.path !== 'seed.persona') {
+      issues.push(`${ref.path} references "${PERSONA_FILE}", which only seed.persona may name`);
+    }
     if (!Object.hasOwn(files, ref.file)) {
       issues.push(`${ref.path} references "${ref.file}", which is not in the template`);
     }
@@ -285,18 +300,33 @@ export function loadTemplate(dir: string): AgentTemplateBody {
 }
 
 /**
- * The gateway's template digest: sha256 over the canonical JSON (keys sorted
- * at every level, the same canonicalization as registry manifests and app
- * packages) of `{template, files}`, `$schema` excluded. Key order never
- * changes it, so republishing the same content is recognised as identical.
+ * The gateway's template digest (agentTemplateDigest): sha256 over the
+ * canonical JSON (keys sorted at every level, the same canonicalization as
+ * registry manifests and app packages) of `{files, template}`, with `$schema`
+ * and the mutable `deprecated` removed and no defaults materialized. Key order
+ * never changes it, so republishing the same content is recognised as
+ * identical, and deprecating a version does not fork its identity.
  */
 export function templateDigest(body: AgentTemplateBody): string {
-  const json = canonicalJson({ template: body.template, files: body.files });
+  const { $schema: _schema, deprecated: _deprecated, ...template } = body.template as AgentTemplateJson;
+  const json = canonicalJson({ files: body.files, template });
   return `sha256:${createHash('sha256').update(json, 'utf8').digest('hex')}`;
 }
 
+/** What `PUT /v1/agent-templates/:id/:version` reports in `outcome`. */
+export const TemplatePublishOutcomeKind = {
+  /** 201: a new id@version. */
+  Created: 'created',
+  /** 200: id@version already holds identical content. */
+  Unchanged: 'unchanged',
+  /** 200: identical content; only its `deprecated` flag changed. */
+  DeprecationUpdated: 'deprecation-updated',
+} as const;
+export type TemplatePublishOutcomeKind =
+  (typeof TemplatePublishOutcomeKind)[keyof typeof TemplatePublishOutcomeKind];
+
 export type TemplatePublishOutcome = {
-  status: 'published' | 'unchanged';
+  outcome: TemplatePublishOutcomeKind;
   id: string;
   version: string;
   digest: string;
@@ -311,27 +341,20 @@ export class TemplatePublishError extends Error {
   }
 }
 
-/** The stored digest, wherever the gateway puts it in its response. */
-function responseDigest(payload: unknown): string | undefined {
-  if (payload === null || typeof payload !== 'object') return undefined;
-  const rec = payload as Record<string, unknown>;
-  if (typeof rec.digest === 'string') return rec.digest;
-  for (const key of ['template', 'version']) {
-    const nested = rec[key];
-    if (nested !== null && typeof nested === 'object') {
-      const digest = (nested as Record<string, unknown>).digest;
-      if (typeof digest === 'string') return digest;
-    }
-  }
-  return undefined;
-}
+/** The outcomes each success status may carry. */
+const OUTCOMES_BY_STATUS: Record<number, readonly TemplatePublishOutcomeKind[]> = {
+  201: [TemplatePublishOutcomeKind.Created],
+  200: [TemplatePublishOutcomeKind.Unchanged, TemplatePublishOutcomeKind.DeprecationUpdated],
+};
 
 /**
- * `PUT /v1/agent-templates/:id/:version` with the operator publish token.
- * 201 = created; 200 = this id@version already holds identical content;
- * 409 = it holds different content (templates are immutable — bump the
- * version). The returned digest must equal the local one; a mismatch means
- * the server normalized the template differently and is reported as an error.
+ * `PUT /v1/agent-templates/:id/:version` with the operator publish token and
+ * `{template, files}`. 201 `created`; 200 `unchanged` or `deprecation-updated`
+ * (same content, only `deprecated` flipped); 409 = id@version holds different
+ * content (templates are immutable — bump the version); 400 = invalid. The
+ * response is `{outcome, template: {digest, …}}`, and `template.digest` must
+ * equal the local digest — a mismatch means the server normalized the
+ * template differently and is reported as an error.
  */
 export async function publishTemplate(opts: {
   gatewayUrl: string;
@@ -352,19 +375,23 @@ export async function publishTemplate(opts: {
   } catch (err) {
     throw new TemplatePublishError(`publishing template ${ref}: request failed: ${(err as Error).message}`, 0);
   }
-  const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  const payload = (await res.json().catch(() => ({}))) as {
+    outcome?: unknown;
+    template?: { digest?: unknown } | null;
+    message?: unknown;
+    error?: unknown;
+  };
   const expected = templateDigest(opts.body);
 
   if (res.status === 409) {
-    const stored = responseDigest(payload);
     throw new TemplatePublishError(
-      `template ${ref} is already published with different content` +
-        `${stored !== undefined ? ` (stored ${stored}, local ${expected})` : ` (local ${expected})`}` +
+      `template ${ref} is already published with different content (local ${expected})` +
         ` — templates are immutable: bump "version" in agents/${id}/agent.json`,
       409,
     );
   }
-  if (res.status !== 200 && res.status !== 201) {
+  const allowed = OUTCOMES_BY_STATUS[res.status];
+  if (allowed === undefined) {
     // Nest errors: {statusCode, message: string | string[], error}.
     const message = Array.isArray(payload.message) ? payload.message.join('; ') : payload.message;
     const detail = [message, payload.error].find((v) => typeof v === 'string') ?? `HTTP ${res.status}`;
@@ -373,9 +400,16 @@ export async function publishTemplate(opts: {
       res.status,
     );
   }
-  const digest = responseDigest(payload);
-  if (digest === undefined) {
-    throw new TemplatePublishError(`publishing template ${ref}: response carries no digest`, res.status);
+  const outcome = payload.outcome as TemplatePublishOutcomeKind;
+  if (!allowed.includes(outcome)) {
+    throw new TemplatePublishError(
+      `publishing template ${ref}: unexpected outcome ${JSON.stringify(payload.outcome)} for HTTP ${res.status}`,
+      res.status,
+    );
+  }
+  const digest = payload.template?.digest;
+  if (typeof digest !== 'string') {
+    throw new TemplatePublishError(`publishing template ${ref}: response carries no template.digest`, res.status);
   }
   if (digest !== expected) {
     throw new TemplatePublishError(
@@ -383,5 +417,5 @@ export async function publishTemplate(opts: {
       res.status,
     );
   }
-  return { status: res.status === 201 ? 'published' : 'unchanged', id, version, digest };
+  return { outcome, id, version, digest };
 }

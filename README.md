@@ -127,10 +127,12 @@ agents/<id>/            the directory name is the template id
 
 ```jsonc
 {
+  "$schema": "https://api.try-dough.com/v1/agent-template/schema",
   "kind": "app",
   "id": "concierge",
-  "version": "1.0.0",                 // strict semver, immutable once published
+  "version": "1.0.0",                 // strict semver without +build, immutable once published
   "description": "…",                 // catalog summary, 1–500 chars
+  "deprecated": false,                // optional; hides it from new deployments
   "model": "gpt-6-luna",              // default model of new deployments
   "tools": {                          // the CEILING; every key defaults to true.
     "memory": true, "tasks": true,    // false = deployments can never enable it
@@ -156,7 +158,7 @@ Rules (the gateway enforces the same ones):
 - Files: names match `^[a-z0-9][a-z0-9._-]{0,63}\.md$`; at most 16 files, each
   1 B–64 KiB, 256 KiB in total (UTF-8 bytes). Every file must be referenced by
   agent.json (`subAgents[].instructions`, `seed.persona`, `seed.notes`) and
-  every reference must exist.
+  every reference must exist. Only `seed.persona` may name `persona.md`.
 - `subAgents` (and `tools.agents`, `approvals: true`) need `tools.tasks` not to
   be `false`; `seed.connectApps` needs `tools.connections` not to be `false`.
 - Sub-agent ids are unique slugs, at most one is `default`, and `worker` is
@@ -165,9 +167,14 @@ Rules (the gateway enforces the same ones):
   editors from adding one, since it would become part of the prompt.
 
 `publish` sends `PUT /v1/agent-templates/:id/:version` with
-`{"template": <agent.json without $schema>, "files": {"<name>.md": …}}`:
-201 = published, 200 = this id@version already holds identical content, 409 =
-it holds different content (bump `version`). The digest is
-`sha256(canonical JSON of {template, files})` with keys sorted at every level,
-the same canonicalization as registry manifests; the CLI verifies the server's
-digest equals the local one. `validate` prints it.
+`{"template": <agent.json without $schema>, "files": {"<name>.md": …}}` and
+reads `outcome`: 201 `created`; 200 `unchanged` (this id@version already holds
+identical content) or `deprecation-updated` (same content, only `deprecated`
+flipped); 409 = it holds different content (bump `version`); 400 = invalid.
+The digest is `sha256(canonical JSON of {files, template})` with keys sorted at
+every level (the same canonicalization as registry manifests), `$schema` and
+`deprecated` removed and no defaults filled in; `files` is `{}` when empty. The
+CLI verifies the server's `template.digest` equals the local one, and
+`validate` prints it. A best-effort test checks parity against the gateway's
+own `agentTemplateDigest` when a gateway checkout is present
+(`../dough-gateway`, or `DOUGH_GATEWAY_DIR`).

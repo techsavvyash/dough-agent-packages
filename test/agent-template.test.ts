@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import {
+  AGENT_TEMPLATE_SCHEMA_URL,
   type AgentTemplate,
   type AgentTemplateBody,
   AgentTemplateError,
@@ -194,9 +195,12 @@ describe('agent.json schema', () => {
     expect(schemaIssues({ ...MINIMAL, id: 'Bad_Id' })).toEqual([
       'id: must be lowercase letters, digits and "-"',
     ]);
-    expect(schemaIssues({ ...MINIMAL, version: '1.0' })).toEqual([
-      'version: version must be strict semver (e.g. 1.4.0 or 1.4.0-rc.1)',
-    ]);
+    const semver = 'version: version must be strict semver without build metadata (e.g. 1.4.0 or 1.4.0-rc.1)';
+    expect(schemaIssues({ ...MINIMAL, version: '1.0' })).toEqual([semver]);
+    expect(schemaIssues({ ...MINIMAL, version: '1.0.0+build.1' })).toEqual([semver]);
+    expect(schemaIssues({ ...MINIMAL, version: '1.0.0-rc.1' })).toEqual([]);
+    expect(schemaIssues({ ...MINIMAL, deprecated: true })).toEqual([]);
+    expect(schemaIssues({ ...MINIMAL, deprecated: 'gone' })[0]).toStartWith('deprecated: ');
     expect(schemaIssues({ ...MINIMAL, description: '' })[0]).toStartWith('description: ');
     expect(schemaIssues({ ...MINIMAL, description: 'x'.repeat(501) })[0]).toStartWith('description: ');
     const { description: _d, ...noDescription } = MINIMAL;
@@ -328,12 +332,23 @@ describe('validateTemplateFiles', () => {
     ]);
   });
 
-  test('a file referenced twice is fine; persona.md is an ordinary file in a template', () => {
+  test('a file referenced twice is fine; persona.md may be the seed persona', () => {
     const body: AgentTemplateBody = {
       template: { ...template(['w.md', 'w.md']), seed: { persona: 'persona.md' } },
       files: { 'w.md': 'x', 'persona.md': 'p' },
     };
     expect(validateTemplateFiles(body)).toEqual([]);
+  });
+
+  test('only seed.persona may name persona.md', () => {
+    const body: AgentTemplateBody = {
+      template: { ...template(['persona.md']), seed: { persona: 'p.md', notes: 'persona.md' } },
+      files: { 'persona.md': 'x', 'p.md': 'p' },
+    };
+    expect(validateTemplateFiles(body)).toEqual([
+      'subAgents.0.instructions references "persona.md", which only seed.persona may name',
+      'seed.notes references "persona.md", which only seed.persona may name',
+    ]);
   });
 });
 
@@ -343,7 +358,7 @@ describe('templateDigest', () => {
     files: { 'p.md': 'hi' },
   };
 
-  test('sha256 of the canonical JSON of {template, files}', () => {
+  test('sha256 of the canonical JSON of {files, template}', () => {
     const expected = createHash('sha256')
       .update(
         '{"files":{"p.md":"hi"},"template":{"description":"d","id":"mini","kind":"app","seed":{"persona":"p.md"},"version":"0.1.0"}}',
@@ -365,12 +380,29 @@ describe('templateDigest', () => {
     );
   });
 
-  test('$schema is not part of the digest (loadTemplate drops it)', () => {
-    const files = { 'agent.json': JSON.stringify(MINIMAL) };
-    const withSchema = { 'agent.json': JSON.stringify({ $schema: 'https://example.com/s', ...MINIMAL }) };
-    expect(templateDigest(loadTemplate(templateDir('mini', withSchema)))).toBe(
-      templateDigest(loadTemplate(templateDir('mini', files))),
-    );
+  test('$schema and deprecated are not part of the digest', () => {
+    const plain = templateDigest(loadTemplate(templateDir('mini', { 'agent.json': JSON.stringify(MINIMAL) })));
+    for (const extra of [{ $schema: 'https://example.com/s' }, { deprecated: true }, { deprecated: false }]) {
+      const dir = templateDir('mini', { 'agent.json': JSON.stringify({ ...extra, ...MINIMAL }) });
+      expect(templateDigest(loadTemplate(dir))).toBe(plain);
+    }
+    // Directly too, in case a caller builds the body by hand.
+    const raw = { ...body.template, $schema: 'https://example.com/s', deprecated: true } as AgentTemplate;
+    expect(templateDigest({ ...body, template: raw })).toBe(templateDigest(body));
+  });
+
+  test('deprecated is still sent: loadTemplate keeps it on the publish body', () => {
+    const dir = templateDir('mini', { 'agent.json': JSON.stringify({ ...MINIMAL, deprecated: true }) });
+    expect(loadTemplate(dir).template.deprecated).toBe(true);
+  });
+
+  test('empty files hash as {} (never omitted)', () => {
+    const expected = createHash('sha256')
+      .update('{"files":{},"template":{"description":"d","id":"mini","kind":"app","version":"0.1.0"}}', 'utf8')
+      .digest('hex');
+    expect(
+      templateDigest({ template: { kind: 'app', id: 'mini', version: '0.1.0', description: 'd' }, files: {} }),
+    ).toBe(`sha256:${expected}`);
   });
 });
 
@@ -380,6 +412,21 @@ describe('publishTemplate', () => {
     files: {},
   };
   const digest = templateDigest(body);
+  /** The gateway's success body. */
+  const ok = (outcome: string, d = digest) => ({
+    outcome,
+    template: {
+      id: 'mini',
+      version: '0.1.0',
+      digest: d,
+      description: 'd',
+      deprecated: false,
+      template: body.template,
+      files: {},
+      createdAt: '2026-10-20T00:00:00.000Z',
+      updatedAt: '2026-10-20T00:00:00.000Z',
+    },
+  });
 
   function fakeFetch(status: number, payload: unknown, seen: Request[] = []): typeof fetch {
     return (async (input: string, init?: RequestInit) => {
@@ -388,32 +435,50 @@ describe('publishTemplate', () => {
     }) as typeof fetch;
   }
 
-  test('PUTs {template, files} with the publish token; 201 = published', async () => {
+  test('PUTs {template, files} with the publish token; 201 created', async () => {
     const seen: Request[] = [];
     const out = await publishTemplate({
       gatewayUrl: 'https://gw.test/',
       token: 'tok',
       body,
-      fetchImpl: fakeFetch(201, { id: 'mini', version: '0.1.0', digest }, seen),
+      fetchImpl: fakeFetch(201, ok('created'), seen),
     });
-    expect(out).toEqual({ status: 'published', id: 'mini', version: '0.1.0', digest });
+    expect(out).toEqual({ outcome: 'created', id: 'mini', version: '0.1.0', digest });
     expect(seen).toHaveLength(1);
     expect(seen[0]!.method).toBe('PUT');
     expect(seen[0]!.url).toBe('https://gw.test/v1/agent-templates/mini/0.1.0');
     expect(seen[0]!.headers.get('authorization')).toBe('Bearer tok');
     expect(seen[0]!.headers.get('content-type')).toBe('application/json');
-    expect(await seen[0]!.json()).toEqual(body);
+    expect(await seen[0]!.json()).toEqual({ template: body.template, files: {} });
   });
 
-  test('200 = identical content already published; a nested digest is read too', async () => {
-    const out = await publishTemplate({
-      gatewayUrl: 'https://gw.test',
-      token: 'tok',
-      body,
-      fetchImpl: fakeFetch(200, { template: { id: 'mini', version: '0.1.0', digest } }),
-    });
-    expect(out.status).toBe('unchanged');
-    expect(out.digest).toBe(digest);
+  test('200 unchanged and 200 deprecation-updated', async () => {
+    for (const outcome of ['unchanged', 'deprecation-updated']) {
+      const out = await publishTemplate({
+        gatewayUrl: 'https://gw.test',
+        token: 'tok',
+        body,
+        fetchImpl: fakeFetch(200, ok(outcome)),
+      });
+      expect(out).toEqual({ outcome: outcome as never, id: 'mini', version: '0.1.0', digest });
+    }
+  });
+
+  test('an outcome that does not fit the status is an error', async () => {
+    for (const [status, outcome] of [
+      [201, 'unchanged'],
+      [200, 'created'],
+      [200, undefined],
+    ] as const) {
+      await expect(
+        publishTemplate({
+          gatewayUrl: 'https://gw.test',
+          token: 'tok',
+          body,
+          fetchImpl: fakeFetch(status, { ...ok('x'), outcome }),
+        }),
+      ).rejects.toThrow(`unexpected outcome ${JSON.stringify(outcome)} for HTTP ${status}`);
+    }
   });
 
   test('409 tells to bump the version', async () => {
@@ -421,11 +486,11 @@ describe('publishTemplate', () => {
       gatewayUrl: 'https://gw.test',
       token: 'tok',
       body,
-      fetchImpl: fakeFetch(409, { statusCode: 409, message: 'conflict', digest: 'sha256:stored' }),
+      fetchImpl: fakeFetch(409, { statusCode: 409, message: 'conflict' }),
     });
     await expect(conflict).rejects.toBeInstanceOf(TemplatePublishError);
     await expect(conflict).rejects.toThrow(
-      `template mini@0.1.0 is already published with different content (stored sha256:stored, local ${digest}) — templates are immutable: bump "version" in agents/mini/agent.json`,
+      `template mini@0.1.0 is already published with different content (local ${digest}) — templates are immutable: bump "version" in agents/mini/agent.json`,
     );
   });
 
@@ -437,25 +502,27 @@ describe('publishTemplate', () => {
       fetchImpl: fakeFetch(400, { statusCode: 400, message: ['a', 'b'], error: 'Bad Request' }),
     });
     await expect(rejected).rejects.toThrow('publishing template mini@0.1.0 failed (HTTP 400): a; b');
-    try {
-      await rejected;
-    } catch (err) {
-      expect((err as TemplatePublishError).status).toBe(400);
-    }
+    const err = await rejected.catch((e: unknown) => e);
+    expect((err as TemplatePublishError).status).toBe(400);
   });
 
-  test('a digest mismatch or a missing digest is an error', async () => {
+  test('template.digest is verified: a mismatch, a missing one or a top-level one is an error', async () => {
     await expect(
       publishTemplate({
         gatewayUrl: 'https://gw.test',
         token: 'tok',
         body,
-        fetchImpl: fakeFetch(201, { digest: 'sha256:other' }),
+        fetchImpl: fakeFetch(201, ok('created', 'sha256:other')),
       }),
     ).rejects.toThrow(`server digest sha256:other does not match the local ${digest}`);
     await expect(
-      publishTemplate({ gatewayUrl: 'https://gw.test', token: 'tok', body, fetchImpl: fakeFetch(201, {}) }),
-    ).rejects.toThrow('response carries no digest');
+      publishTemplate({
+        gatewayUrl: 'https://gw.test',
+        token: 'tok',
+        body,
+        fetchImpl: fakeFetch(201, { outcome: 'created', digest }),
+      }),
+    ).rejects.toThrow('response carries no template.digest');
   });
 
   test('a transport failure is a TemplatePublishError', async () => {
@@ -504,6 +571,12 @@ describe('app templates in this repo', () => {
     expect(Object.keys(files).sort()).toEqual(['notes.md', 'persona.md', 'worker.md']);
   });
 
+  test('concierge agent.json points editors at the gateway template schema', () => {
+    const raw = JSON.parse(readFileSync(join(CONCIERGE, 'agent.json'), 'utf8')) as { $schema?: string };
+    expect(raw.$schema).toBe(AGENT_TEMPLATE_SCHEMA_URL);
+    expect(AGENT_TEMPLATE_SCHEMA_URL).toBe('https://api.try-dough.com/v1/agent-template/schema');
+  });
+
   test('concierge files are verbatim: notes.md and worker.md keep no trailing newline', () => {
     // The host appends notes.md after its host notes and uses worker.md as the
     // worker prompt byte for byte; these reproduce Dough's prompts exactly.
@@ -546,3 +619,37 @@ describe('app templates in this repo', () => {
  * changed: the published 1.0.0 is immutable, so bump "version" too.
  */
 const CONCIERGE_TEMPLATE_DIGEST = 'sha256:3b5aeacab4bb43b621e8ff16672eec07e98a2f8611f90f58fec9f40bb64b3b0a';
+
+// ── Live cross-repo parity (best-effort; skipped when no gateway checkout) ───
+// DOUGH_GATEWAY_DIR overrides the sibling ../dough-gateway checkout.
+const GATEWAY_TEMPLATE = join(
+  resolve(process.env.DOUGH_GATEWAY_DIR ?? join(import.meta.dir, '..', '..', 'dough-gateway')),
+  'src',
+  'domain',
+  'agent-template.ts',
+);
+
+describe.if(existsSync(GATEWAY_TEMPLATE))('live gateway parity', () => {
+  test('the gateway accepts these templates and digests them exactly as the CLI does', async () => {
+    const gw = (await import(GATEWAY_TEMPLATE)) as {
+      publishAgentTemplateBodySchema: { safeParse: (v: unknown) => { success: boolean; error?: unknown } };
+      normalizeAgentTemplateJson: (t: unknown) => unknown;
+      agentTemplateDigest: (t: unknown, files: Record<string, string>) => string;
+    };
+    const concierge = join(import.meta.dir, '..', 'agents', 'concierge');
+    const rawConcierge = JSON.parse(readFileSync(join(concierge, 'agent.json'), 'utf8')) as Record<string, unknown>;
+    const cases: Array<{ raw: Record<string, unknown>; files: Record<string, string> }> = [
+      { raw: rawConcierge, files: loadTemplate(concierge).files },
+      { raw: { ...rawConcierge, deprecated: true }, files: loadTemplate(concierge).files },
+      { raw: MINIMAL, files: {} },
+      { raw: FULL, files: FULL_FILES },
+    ];
+    for (const { raw, files } of cases) {
+      const parsed = gw.publishAgentTemplateBodySchema.safeParse({ template: raw, files });
+      expect(parsed.success).toBe(true);
+      const ours = templateDigest({ template: raw as AgentTemplate, files });
+      expect(gw.agentTemplateDigest(gw.normalizeAgentTemplateJson(raw), files)).toBe(ours);
+    }
+    expect(templateDigest(loadTemplate(concierge))).toBe(CONCIERGE_TEMPLATE_DIGEST);
+  });
+});
