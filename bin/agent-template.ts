@@ -413,12 +413,16 @@ export function loadTemplate(dir: string): AgentTemplateBody {
  * The gateway's template digest (agentTemplateDigest): sha256 over the
  * canonical JSON (keys sorted at every level, the same canonicalization as
  * registry manifests and app packages) of `{files, template}`, with `$schema`
- * and the mutable `deprecated` removed and no defaults materialized. Key order
+ * and the mutable `deprecated` removed, `id` reduced to the bare name (no
+ * `@scope/`) and no defaults materialized. Key order
  * never changes it, so republishing the same content is recognised as
  * identical, and deprecating a version does not fork its identity.
  */
 export function templateDigest(body: AgentTemplateBody): string {
-  const { $schema: _schema, deprecated: _deprecated, ...template } = body.template as AgentTemplateJson;
+  const { $schema: _schema, deprecated: _deprecated, ...rest } = body.template as AgentTemplateJson;
+  // The scope is not content: a team template hashes under its bare name, so
+  // renaming the team (its slug) never changes a published version's digest.
+  const template = { ...rest, id: parseTemplateId(rest.id)?.name ?? rest.id };
   const json = canonicalJson({ files: body.files, template });
   return `sha256:${createHash('sha256').update(json, 'utf8').digest('hex')}`;
 }

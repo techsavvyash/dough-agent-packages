@@ -176,11 +176,24 @@ describe('team templates on disk', () => {
     );
   });
 
-  test('the full id is part of the digest: the same template in another namespace differs', () => {
+  test('the scope is not part of the digest: the same template under any namespace hashes alike', () => {
     const team = loadTemplate(templateDir('@acme/support-bot', 'support-bot'));
-    const other = loadTemplate(templateDir('@other/support-bot', 'support-bot'));
+    const renamed = loadTemplate(templateDir('@acme-corp/support-bot', 'support-bot'));
     const platform = loadTemplate(templateDir('support-bot', 'support-bot'));
-    expect(new Set([templateDigest(team), templateDigest(other), templateDigest(platform)]).size).toBe(3);
+    // The body still carries the full id; only the digest drops the scope.
+    expect(team.template.id).toBe('@acme/support-bot');
+    expect(templateDigest(team)).toBe(templateDigest(renamed));
+    expect(templateDigest(team)).toBe(templateDigest(platform));
+    // Pinned: canonical {files, template} with the bare name.
+    const expected = new Bun.CryptoHasher('sha256')
+      .update(
+        '{"files":{"persona.md":"You help."},"template":{"description":"d","id":"support-bot","kind":"app","seed":{"persona":"persona.md"},"version":"1.0.0"}}',
+      )
+      .digest('hex');
+    expect(templateDigest(team)).toBe(`sha256:${expected}`);
+    // The name still counts.
+    const other = loadTemplate(templateDir('@acme/triage', 'triage'));
+    expect(templateDigest(other)).not.toBe(templateDigest(team));
   });
 });
 

@@ -650,6 +650,41 @@ const GATEWAY_TEMPLATE = join(
   'agent-template.ts',
 );
 
+type GatewayTemplateModule = {
+  publishAgentTemplateBodySchema: {
+    safeParse: (v: unknown) => { success: boolean; data?: { template: unknown; files?: Record<string, string> } };
+  };
+  normalizeAgentTemplateJson: (t: unknown) => unknown;
+  agentTemplateDigest: (t: unknown, files: Record<string, string>) => string;
+};
+const gatewayModule: GatewayTemplateModule | undefined = existsSync(GATEWAY_TEMPLATE)
+  ? ((await import(GATEWAY_TEMPLATE)) as GatewayTemplateModule)
+  : undefined;
+/** A gateway checkout that already knows team namespaces (Part C). */
+const gatewayHasTeams =
+  gatewayModule?.publishAgentTemplateBodySchema.safeParse({ template: { ...FULL, id: '@acme/tess' }, files: FULL_FILES })
+    .success === true;
+
+describe.if(gatewayHasTeams)('live gateway parity: team namespaces', () => {
+  test('team templates digest under their bare name on both sides', () => {
+    const gw = gatewayModule!;
+    const digests = ['@acme/tess', '@acme-corp/tess', 'tess'].map((id) => {
+      const raw = { ...FULL, id };
+      const parsed = gw.publishAgentTemplateBodySchema.safeParse({ template: raw, files: FULL_FILES });
+      expect(parsed.success).toBe(true);
+      const gatewayDigest = gw.agentTemplateDigest(gw.normalizeAgentTemplateJson(parsed.data!.template), FULL_FILES);
+      expect(templateDigest({ template: agentTemplateJsonSchema.parse(raw), files: FULL_FILES })).toBe(gatewayDigest);
+      return gatewayDigest;
+    });
+    expect(new Set(digests).size).toBe(1);
+    for (const id of ['acme/tess', '@Acme/tess', '@acme-/tess']) {
+      const raw = { ...FULL, id };
+      expect(gw.publishAgentTemplateBodySchema.safeParse({ template: raw, files: FULL_FILES }).success).toBe(false);
+      expect(agentTemplateJsonSchema.safeParse(raw).success).toBe(false);
+    }
+  });
+});
+
 describe.if(existsSync(GATEWAY_TEMPLATE))('live gateway parity', () => {
   test('the gateway accepts these templates and digests them exactly as the CLI does', async () => {
     const gw = (await import(GATEWAY_TEMPLATE)) as {

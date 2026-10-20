@@ -174,7 +174,9 @@ identical content) or `deprecation-updated` (same content, only `deprecated`
 flipped); 409 = it holds different content (bump `version`); 400 = invalid.
 The digest is `sha256(canonical JSON of {files, template})` with keys sorted at
 every level (the same canonicalization as registry manifests), `$schema` and
-`deprecated` removed and no defaults filled in; `files` is `{}` when empty. The
+`deprecated` removed, `id` reduced to its bare name (a team template hashes
+without its `@scope/`, so renaming the team never changes a digest) and no
+defaults filled in; `files` is `{}` when empty. The
 CLI verifies the server's `template.digest` equals the local one, and
 `validate` prints it. A best-effort test checks parity against the gateway's
 own `agentTemplateDigest` when a gateway checkout is present
