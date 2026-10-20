@@ -236,6 +236,21 @@ describe('publishing each form', () => {
     ]);
   });
 
+  test('the gateway\'s 401 (unknown/revoked token) and 403 (wrong namespace) reach the user verbatim', async () => {
+    const body = loadTemplate(templateDir('@acme/support-bot', 'support-bot'));
+    for (const [status, message] of [
+      [401, 'invalid or revoked template token'],
+      [403, 'this template token publishes only into @other/…'],
+    ] as const) {
+      const fetchImpl = (async () =>
+        new Response(JSON.stringify({ statusCode: status, message, error: 'x' }), { status })) as unknown as typeof fetch;
+      const failed = publishTemplate({ gatewayUrl: 'https://gw.test', token: 'tpt_team', body, fetchImpl });
+      await expect(failed).rejects.toThrow(
+        `publishing template @acme/support-bot@1.0.0 failed (HTTP ${status}): ${message}`,
+      );
+    }
+  });
+
   test('a repo of team templates publishes with only DOUGH_TEMPLATE_TOKEN', async () => {
     const { fetchImpl, calls } = gateway();
     const dirs = [templateDir('@acme/support-bot', 'support-bot'), templateDir('@acme/triage', 'triage')];
