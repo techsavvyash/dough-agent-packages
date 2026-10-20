@@ -152,7 +152,7 @@ const templateObjectSchema = z
     version: z
       .string()
       .regex(TEMPLATE_VERSION_PATTERN, 'version must be strict semver without build metadata (e.g. 1.4.0 or 1.4.0-rc.1)'),
-    description: z.string().min(1).max(DESCRIPTION_MAX_CHARS),
+    description: z.string().trim().min(1).max(DESCRIPTION_MAX_CHARS),
     /** Mutable metadata: hides the version from new deployments; not part of the digest. */
     deprecated: z.boolean().optional(),
     /** The default model of new deployments. */

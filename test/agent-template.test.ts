@@ -391,6 +391,26 @@ describe('templateDigest', () => {
     expect(templateDigest({ ...body, template: raw })).toBe(templateDigest(body));
   });
 
+  test('description and seed.assistantName are trimmed before digesting, as the gateway does', () => {
+    const trimmed = { ...MINIMAL, description: 'smallest template', seed: { persona: 'p.md', assistantName: 'Tess' } };
+    const padded = { ...trimmed, description: '  smallest template\n', seed: { persona: 'p.md', assistantName: ' Tess\t' } };
+    const files = { 'p.md': 'persona' };
+    const a = loadTemplate(templateDir('mini', { 'agent.json': JSON.stringify(trimmed), ...files }));
+    const b = loadTemplate(templateDir('mini', { 'agent.json': JSON.stringify(padded), ...files }));
+    expect(templateDigest(b)).toBe(templateDigest(a));
+    // The publish body carries the trimmed values too, so the server sees what was digested.
+    expect(b.template.description).toBe('smallest template');
+    expect(b.template.seed?.assistantName).toBe('Tess');
+    // Nothing else is trimmed: a sub-agent description keeps its whitespace.
+    const sub = { id: 'w', name: 'W', description: ' d ', instructions: 'w.md' };
+    const withSub = loadTemplate(
+      templateDir('mini', { 'agent.json': JSON.stringify({ ...MINIMAL, subAgents: [sub] }), 'w.md': 'x' }),
+    );
+    expect(withSub.template.subAgents?.[0]?.description).toBe(' d ');
+    // A description that is only whitespace is empty.
+    expect(schemaIssues({ ...MINIMAL, description: '   ' })[0]).toStartWith('description: ');
+  });
+
   test('deprecated is still sent: loadTemplate keeps it on the publish body', () => {
     const dir = templateDir('mini', { 'agent.json': JSON.stringify({ ...MINIMAL, deprecated: true }) });
     expect(loadTemplate(dir).template.deprecated).toBe(true);
