@@ -1,0 +1,23 @@
+{
+  "$schema": "https://api.try-dough.com/v1/agent-package/schema",
+  "description": "Dough's always-on concierge: answers, acts on the user's connected services, hands longer work to agents, and helps new people get set up.",
+  "assistantName": "Dough",
+  "model": "gpt-6-luna",
+  "notes": "notes.md",
+  "connectApps": [
+    "google-calendar",
+    "gmail",
+    "github",
+    "notion",
+    "linear"
+  ],
+  "subAgents": [
+    {
+      "id": "worker",
+      "name": "Worker",
+      "description": "General-purpose worker: carries out one task for the user with their connected services and web search, and reports what it did.",
+      "instructions": "worker.md",
+      "default": true
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+
+# App package prompt files are used verbatim by the agent host: a final
+# newline an editor adds becomes part of the prompt.
+[apps/**.md]
+insert_final_newline = false
