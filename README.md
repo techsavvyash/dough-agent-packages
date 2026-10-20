@@ -1,18 +1,19 @@
 # dough-agent-packages
 
-Source packages for [dough](https://try-dough.com) agents, in two kinds:
+Source packages for [dough](https://try-dough.com) agents. Every package is a
+directory under `agents/` with an `agent.json` manifest, whose `kind` says what
+it is:
 
-- **Registry agents** (`agents/`): one-shot agents the platform runs in a fresh
-  VM per task (PR review, coding, …), published to the hosted agent registry.
-- **App agents** (`apps/`): always-on agents such as Dough, the concierge. Each
-  directory configures one dough app running the platform's managed agent host.
-  See [App agent packages](#app-agent-packages).
+- **Registry agents** (`kind` absent or `"task"`): one-shot agents the platform
+  runs in a fresh VM per task (PR review, coding, …), published to the hosted
+  agent registry.
+- **App templates** (`kind: "app"`): the skeleton of an always-on agent app such
+  as Dough, the concierge — its sub-agents, their instructions, the tool
+  ceiling and the starter persona. See [App templates](#app-templates).
 
-This repo is the **authoring side** of the dough agent registry. Each agent is a
-directory under `agents/` with a `agent.json` manifest, a `prompt.md` system
-prompt, and a `README.md` catalog page. Pushing to `main` publishes every
-package to the hosted registry via CI — **no platform deploy required**. Bumping
-a prompt is a PR here, not an edit to the gateway.
+This repo is the **authoring side** of both. Pushing to `main` publishes every
+package via CI — **no platform deploy required**. Bumping a prompt is a PR here,
+not an edit to the gateway. Every package is immutable per `id@version`.
 
 The design lives in
 [`dough-gateway/docs/design/agent-packages.md`](../dough-gateway/docs/design/agent-packages.md).
@@ -21,25 +22,23 @@ The design lives in
 
 ```
 agents/
-  pr-reviewer/          agent.json, prompt.md, README.md
+  pr-reviewer/          agent.json, prompt.md, README.md        (registry agent)
   pr-reviewer-codex/    …
-  coder/  coder-codex/  fixer-codex/  default/
-apps/
-  concierge/            agent.json, persona.md, notes.md, worker.md (Dough)
+  coder/  coder-codex/  fixer-codex/  default/  …
+  concierge/            agent.json, persona.md, notes.md,       (app template: Dough)
+                        worker.md, README.md
 bin/
-  publish.ts            the CLI: validate | pack | publish
+  publish.ts            the CLI: validate | pack | publish (dispatches on kind)
   check-sync.ts         drift check vs the live dough-gateway definitions
-  manifest.ts           the agent.json zod schema (local pre-flight)
+  manifest.ts           the registry agent.json zod schema (local pre-flight)
   pack.ts               deterministic tar.gz bundling (node runtime)
   registry.ts           registry HTTP client + idempotency
   resolve.ts            promptFile/readmeFile inlining
-  app-package.ts        app package format: validation, digest, publish client
-  publish-app.ts        the app CLI: validate | publish
-.github/workflows/publish.yml       registry agents
-.github/workflows/publish-apps.yml  app agents
+  agent-template.ts     app templates: schema, file rules, digest, publish client
+.github/workflows/publish.yml   tests + validation on PRs; publishes on main
 ```
 
-## The package format
+## The registry package format
 
 `agent.json` **is** the registry's stored `AgentDefinition`, with two authoring
 conveniences resolved away at publish time:
@@ -77,13 +76,15 @@ conveniences resolved away at publish time:
 ## The CLI
 
 ```bash
-bun bin/publish.ts validate agents/*      # local schema validation (offline)
+bun bin/publish.ts validate agents/*      # local validation of both kinds (offline)
 bun bin/publish.ts pack agents/<node-id>  # deterministic bundle + digest (node runtime)
-bun bin/publish.ts publish agents/*       # resolve → validate → idempotent PUT
+bun bin/publish.ts publish agents/*       # validate → idempotent PUT, per kind
 ```
 
-`publish` reads `DOUGH_GATEWAY_URL` and `AGENT_REGISTRY_PUBLISH_TOKEN` from the
-environment. It:
+`publish` reads `DOUGH_GATEWAY_URL` and `AGENT_REGISTRY_PUBLISH_TOKEN` (the
+operator publish token, used for both kinds) from the environment. App
+templates are published as described in [App templates](#app-templates). For a
+registry agent it:
 
 1. `POST /v1/agents/validate` (dry-run; warns and continues if the endpoint is
    absent — it lands in a later gateway task).
@@ -107,38 +108,66 @@ sorted, mtime-zeroed, fixed-mode POSIX USTAR archive gzipped deterministically,
 so two packs of the same tree on any machine produce the same digest — which is
 what makes republish idempotent.
 
-## App agent packages
+## App templates
 
-An app package configures an always-on agent: its prompt, which built-in
-capabilities it has, its operating notes and its sub-agents. The format is
-defined by the gateway (`dough-gateway/docs/agent-package-format.md`, JSON
-Schema at `https://api.try-dough.com/v1/agent-package/schema`):
+An app template is the versioned **skeleton** of an always-on agent app. The
+**deployments** built from it (one per app: its persona, notes, model,
+assistant name, the tools it enables within the ceiling, approvals, `/connect`
+apps and triggers) are created and edited on the app's **Agent** tab in the
+dashboard. This repo never writes a deployment and the dashboard never writes a
+template: a deployment pins an exact template version, so publishing a new
+version changes nothing until someone upgrades a deployment to it.
 
 ```
-apps/<app-name>/        the directory name is the dough app's name
-  agent.json            manifest: description, assistantName, model, tools,
-                        approvals, connectApps, notes, subAgents
-  persona.md            the agent's system prompt
-  *.md                  files agent.json references (notes, sub-agent prompts)
-  README.md             optional; documentation only, never published
+agents/<id>/            the directory name is the template id
+  agent.json            the manifest (strict: unknown keys are rejected)
+  *.md                  every file agent.json references, sent verbatim
+  README.md             the catalog page; documentation only, never published
 ```
 
-Publishing creates a new version on the app and makes it active; the running
-host picks it up within about ten seconds, with no build or redeploy. The same
-versions are visible and editable on the app's **Agent** tab in the dashboard,
-where any version can be re-activated (rollback).
-
-```bash
-bun bin/publish-app.ts validate apps/*                  # offline, prints digests
-DOUGH_GATEWAY_URL=https://api.try-dough.com \
-DOUGH_DEPLOY_TOKENS='{"concierge":"dpt_…"}' \
-  bun bin/publish-app.ts publish apps/concierge          # 201 new version / 200 unchanged
+```jsonc
+{
+  "kind": "app",
+  "id": "concierge",
+  "version": "1.0.0",                 // strict semver, immutable once published
+  "description": "…",                 // catalog summary, 1–500 chars
+  "model": "gpt-6-luna",              // default model of new deployments
+  "tools": {                          // the CEILING; every key defaults to true.
+    "memory": true, "tasks": true,    // false = deployments can never enable it
+    "agents": true, "events": true,
+    "connections": true, "webSearch": true
+  },
+  "approvals": true,                  // ceiling; default = tools.tasks
+  "subAgents": [                      // owned by the template, read-only in deployments
+    { "id": "worker", "name": "Worker", "description": "…",
+      "instructions": "worker.md", "default": true }
+  ],
+  "seed": {                           // copied into a NEW deployment only
+    "persona": "persona.md",
+    "notes": "notes.md",
+    "assistantName": "Dough",
+    "connectApps": ["gmail", "github"]
+  }
+}
 ```
 
-CI (`publish-apps.yml`) validates every app package on pull requests and, on
-push to `main`, publishes only the apps whose directory changed, so a version
-published from the dashboard is not reverted by an unrelated commit. A change
-here after a dashboard edit does replace that edit: copy dashboard changes back
-into this repo if it is the source of truth for that app. Secrets:
-`DOUGH_GATEWAY_URL` and `DOUGH_DEPLOY_TOKENS` (a JSON object mapping each app
-name to a deploy token created on that app's Agent tab).
+Rules (the gateway enforces the same ones):
+
+- Files: names match `^[a-z0-9][a-z0-9._-]{0,63}\.md$`; at most 16 files, each
+  1 B–64 KiB, 256 KiB in total (UTF-8 bytes). Every file must be referenced by
+  agent.json (`subAgents[].instructions`, `seed.persona`, `seed.notes`) and
+  every reference must exist.
+- `subAgents` (and `tools.agents`, `approvals: true`) need `tools.tasks` not to
+  be `false`; `seed.connectApps` needs `tools.connections` not to be `false`.
+- Sub-agent ids are unique slugs, at most one is `default`, and `worker` is
+  reserved for the default sub-agent.
+- Template files have no implicit trailing newline: `.editorconfig` keeps
+  editors from adding one, since it would become part of the prompt.
+
+`publish` sends `PUT /v1/agent-templates/:id/:version` with
+`{"template": <agent.json without $schema>, "files": {"<name>.md": …}}`:
+201 = published, 200 = this id@version already holds identical content, 409 =
+it holds different content (bump `version`). The digest is
+`sha256(canonical JSON of {template, files})` with keys sorted at every level,
+the same canonicalization as registry manifests; the CLI verifies the server's
+digest equals the local one. `validate` prints it.

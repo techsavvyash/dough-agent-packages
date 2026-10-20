@@ -149,3 +149,31 @@ describe('loadPackage errors', () => {
     }
   });
 });
+
+describe('resolveManifest kind', () => {
+  test('kind "task" is accepted and stripped from the wire object', () => {
+    const dir = pkgDir();
+    try {
+      writePkg(dir, { ...CLAUDE_BASE, kind: 'task', promptFile: './p.md' });
+      writeFileSync(join(dir, 'p.md'), 'prompt');
+      const def = resolveManifest(loadPackage(dir));
+      expect('kind' in def).toBe(false);
+      expect(def.systemPrompt).toBe('prompt');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('any other kind is not a registry agent', () => {
+    const dir = pkgDir();
+    try {
+      writePkg(dir, { ...CLAUDE_BASE, kind: 'app', promptFile: './p.md' });
+      writeFileSync(join(dir, 'p.md'), 'prompt');
+      expect(() => resolveManifest(loadPackage(dir))).toThrow(
+        'has kind "app" — only "task" (or no kind) is a registry agent',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

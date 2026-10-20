@@ -108,6 +108,14 @@ function main(argv: string[]): number {
   const packages = readdirSync(AGENTS_DIR).sort();
   let drift = 0;
   for (const id of packages) {
+    const manifest = JSON.parse(readFileSync(join(AGENTS_DIR, id, 'agent.json'), 'utf8')) as {
+      kind?: unknown;
+    };
+    if (manifest.kind === 'app') {
+      // App templates have no gateway builtin to drift from.
+      console.log(`--  ${id}: app template`);
+      continue;
+    }
     const live = livePrompts[id];
     if (live === undefined) {
       // A package the gateway no longer defines — informational, not drift

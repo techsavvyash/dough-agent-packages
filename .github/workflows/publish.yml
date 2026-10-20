@@ -1,13 +1,18 @@
 name: publish
 
-# Publish every agent package on push to main. Idempotent: an id@version whose
-# digest already matches the registry is skipped; a changed digest on an
+# Publish every package under agents/ on push to main: registry agents to
+# /v1/agents, app templates (kind "app") to /v1/agent-templates. Idempotent: an
+# id@version whose digest already matches is skipped; a changed digest on an
 # existing version is a HARD failure (immutability — bump the version in
-# agent.json). See docs: dough-gateway/docs/design/agent-packages.md §2.
+# agent.json). Pull requests run the tests and offline validation only.
+# See docs: dough-gateway/docs/design/agent-packages.md §2.
+#
+# Secrets: DOUGH_GATEWAY_URL, AGENT_REGISTRY_PUBLISH_TOKEN (operator token).
 
 on:
   push:
     branches: [main]
+  pull_request:
   # Allow re-running the publish manually (e.g. after adding a registry secret).
   workflow_dispatch:
 
@@ -35,6 +40,7 @@ jobs:
         run: bun bin/publish.ts validate agents/*
 
       - name: Publish all packages
+        if: github.event_name != 'pull_request'
         env:
           DOUGH_GATEWAY_URL: ${{ secrets.DOUGH_GATEWAY_URL }}
           AGENT_REGISTRY_PUBLISH_TOKEN: ${{ secrets.AGENT_REGISTRY_PUBLISH_TOKEN }}

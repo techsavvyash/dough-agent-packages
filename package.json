@@ -3,14 +3,13 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Source packages for dough registry agents \u2014 npm-style authoring and publishing.",
+  "description": "Source packages for dough agents \u2014 registry agents and app templates, npm-style authoring and publishing.",
   "scripts": {
     "test": "bun test",
     "validate": "bun bin/publish.ts validate agents/*",
     "publish:all": "bun bin/publish.ts publish agents/*",
     "check-sync": "bun bin/check-sync.ts",
-    "typecheck": "tsc --noEmit",
-    "validate:apps": "bun bin/publish-app.ts validate apps/*"
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/bun": "^1.3.0",
