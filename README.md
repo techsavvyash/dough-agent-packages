@@ -158,7 +158,8 @@ git next to the release tooling its sub-agents drive:
   "tools": {                          // the CEILING; every key defaults to true.
     "memory": true, "tasks": true,    // false = deployments can never enable it
     "agents": true, "events": true,
-    "connections": true, "webSearch": false
+    "connections": true, "webSearch": false,
+    "authoring": false
   },
   "approvals": true,                  // ceiling; default = tools.tasks
   "subAgents": [                      // owned by the template, read-only in deployments
@@ -184,6 +185,12 @@ Rules (the gateway enforces the same ones):
   every reference must exist. Only `seed.persona` may name `persona.md`.
 - `subAgents` (and `tools.agents`, `approvals: true`) need `tools.tasks` not to
   be `false`; `seed.connectApps` needs `tools.connections` not to be `false`.
+- `tools.authoring` lets the agent propose one-off runs and permanent agents
+  for the people it talks to; nothing is created until that person replies with
+  the confirm code the gateway issued. It is independent of `tools.tasks`, only
+  the entry agent can have it (sub-agent `tools` reject it), and as a ceiling it
+  only allows it: unlike every other tool, a deployment has it off until it
+  turns it on itself.
 - Sub-agent ids are unique slugs, at most one is `default`, and `worker` is
   reserved for the default sub-agent.
 - Template files have no implicit trailing newline: `.editorconfig` keeps
