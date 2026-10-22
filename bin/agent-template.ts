@@ -178,7 +178,12 @@ const fileRef = z
   .regex(FILE_NAME_PATTERN, 'must be a file name like "notes.md" (lowercase, ending in .md)');
 const slug = z.string().regex(SLUG_PATTERN, 'must be lowercase letters, digits and "-"');
 
-/** The ceiling: `false` = deployments of this template can never enable it. Default true. */
+/**
+ * The ceiling: `false` = deployments of this template can never enable it. Default true.
+ * `authoring` (proposing one-off runs and permanent agents for the people the
+ * agent talks to) is independent of `tasks`, and a deployment still has to turn
+ * it on itself: unlike the other tools it is off unless the deployment sets it.
+ */
 const toolsSchema = z
   .object({
     memory: z.boolean().optional(),
@@ -187,6 +192,7 @@ const toolsSchema = z
     events: z.boolean().optional(),
     connections: z.boolean().optional(),
     webSearch: z.boolean().optional(),
+    authoring: z.boolean().optional(),
   })
   .strict();
 
@@ -196,6 +202,7 @@ const subAgentSchema = z
     name: z.string().min(1).max(SUB_AGENT_NAME_MAX_CHARS),
     description: z.string().min(1).max(DESCRIPTION_MAX_CHARS),
     instructions: fileRef,
+    /** Workers never get `authoring`: only the entry agent proposes agents. */
     tools: z
       .object({
         memory: z.boolean().optional(),

@@ -249,6 +249,45 @@ describe('agent.json schema', () => {
     expect(schemaIssues({ ...MINIMAL, tools: { tasks: false, agents: false }, approvals: false })).toEqual([]);
   });
 
+  test('tools.authoring is an optional boolean ceiling, independent of tasks', () => {
+    for (const authoring of [true, false]) {
+      expect(schemaIssues({ ...MINIMAL, tools: { authoring } })).toEqual([]);
+      // Unlike agents/approvals/subAgents it does not lean on tasks.
+      expect(schemaIssues({ ...MINIMAL, tools: { tasks: false, authoring }, approvals: false })).toEqual([]);
+      expect(agentTemplateJsonSchema.parse({ ...MINIMAL, tools: { authoring } }).tools).toEqual({ authoring });
+    }
+    // Absent stays absent: the CLI never invents a ceiling value.
+    expect(agentTemplateJsonSchema.parse({ ...MINIMAL, tools: { memory: true } }).tools).toEqual({ memory: true });
+    for (const authoring of ['true', 1, null]) {
+      expect(schemaIssues({ ...MINIMAL, tools: { authoring } })).toEqual([
+        'tools.authoring: Expected boolean, received ' + (authoring === null ? 'null' : typeof authoring),
+      ]);
+    }
+  });
+
+  test('sub-agents can never author agents: only the entry agent proposes them', () => {
+    const issues = schemaIssues({
+      ...MINIMAL,
+      subAgents: [
+        { id: 'w', name: 'W', description: 'd', instructions: 'w.md', tools: { memory: true, authoring: true } },
+      ],
+    });
+    expect(issues).toEqual(["subAgents.0.tools: Unrecognized key(s) in object: 'authoring'"]);
+  });
+
+  test('authoring is part of the digest like every other ceiling key', () => {
+    const files = { 'p.md': 'persona' };
+    const base = { ...MINIMAL, seed: { persona: 'p.md' } };
+    const digest = (tools?: Record<string, boolean>) =>
+      templateDigest({ template: agentTemplateJsonSchema.parse(tools ? { ...base, tools } : base), files });
+    const on = digest({ authoring: true });
+    const off = digest({ authoring: false });
+    expect(on).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(new Set([on, off, digest()]).size).toBe(3);
+    // Key order inside tools never matters.
+    expect(digest({ authoring: true, memory: false })).toBe(digest({ memory: false, authoring: true }));
+  });
+
   test('seed.connectApps needs the connections ceiling', () => {
     expect(
       schemaIssues({ ...MINIMAL, tools: { connections: false }, seed: { persona: 'p.md', connectApps: ['gmail'] } }),
@@ -710,6 +749,29 @@ describe.if(gatewayHasTeams)('live gateway parity: team namespaces', () => {
       expect(gw.publishAgentTemplateBodySchema.safeParse({ template: raw, files: FULL_FILES }).success).toBe(false);
       expect(agentTemplateJsonSchema.safeParse(raw).success).toBe(false);
     }
+  });
+});
+
+/** A gateway checkout that already knows the authoring tool switch. */
+const gatewayHasAuthoring =
+  gatewayModule?.publishAgentTemplateBodySchema.safeParse({ template: { ...MINIMAL, tools: { authoring: true } } })
+    .success === true;
+
+describe.if(gatewayHasAuthoring)('live gateway parity: tools.authoring', () => {
+  test('the gateway accepts the authoring ceiling and digests it exactly as the CLI does', () => {
+    const gw = gatewayModule!;
+    for (const tools of [{ authoring: true }, { authoring: false }, { ...FULL.tools, authoring: true }]) {
+      const raw = { ...FULL, tools };
+      const parsed = gw.publishAgentTemplateBodySchema.safeParse({ template: raw, files: FULL_FILES });
+      expect(parsed.success).toBe(true);
+      const gatewayDigest = gw.agentTemplateDigest(gw.normalizeAgentTemplateJson(parsed.data!.template), FULL_FILES);
+      expect(templateDigest({ template: agentTemplateJsonSchema.parse(raw), files: FULL_FILES })).toBe(gatewayDigest);
+    }
+    // Neither side lets a sub-agent author.
+    const sub = { ...FULL.subAgents[0], tools: { authoring: true } };
+    const raw = { ...FULL, subAgents: [sub] };
+    expect(gw.publishAgentTemplateBodySchema.safeParse({ template: raw, files: FULL_FILES }).success).toBe(false);
+    expect(agentTemplateJsonSchema.safeParse(raw).success).toBe(false);
   });
 });
 
